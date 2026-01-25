@@ -420,6 +420,155 @@ defmodule MyApp.DataPlatform do
 end
 ```
 
+## Supervised Connection
+
+QuackLake uses plain functions by default (no process overhead). If you want a supervised connection that restarts on failure, wrap it in a GenServer:
+
+**lib/my_app/lake_server.ex**
+
+```elixir
+defmodule MyApp.LakeServer do
+  @moduledoc """
+  Supervised DuckLake connection.
+  """
+  use GenServer
+
+  # Client API
+
+  def start_link(opts) do
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
+
+  def query(server \\ __MODULE__, sql, params \\ []) do
+    GenServer.call(server, {:query, sql, params})
+  end
+
+  def query!(server \\ __MODULE__, sql, params \\ []) do
+    case query(server, sql, params) do
+      {:ok, rows} -> rows
+      {:error, reason} -> raise QuackLake.Error, message: "Query failed", reason: reason
+    end
+  end
+
+  def execute(server \\ __MODULE__, sql, params \\ []) do
+    GenServer.call(server, {:execute, sql, params})
+  end
+
+  def conn(server \\ __MODULE__) do
+    GenServer.call(server, :conn)
+  end
+
+  # Server callbacks
+
+  @impl true
+  def init(opts) do
+    case setup_connection(opts) do
+      {:ok, conn} -> {:ok, %{conn: conn, opts: opts}}
+      {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  @impl true
+  def handle_call({:query, sql, params}, _from, %{conn: conn} = state) do
+    {:reply, QuackLake.query(conn, sql, params), state}
+  end
+
+  def handle_call({:execute, sql, params}, _from, %{conn: conn} = state) do
+    {:reply, QuackLake.Query.execute(conn, sql, params), state}
+  end
+
+  def handle_call(:conn, _from, %{conn: conn} = state) do
+    {:reply, conn, state}
+  end
+
+  defp setup_connection(opts) do
+    config = Keyword.get(opts, :config, Application.fetch_env!(:my_app, :quack_lake))
+    s3_config = config[:s3]
+
+    with {:ok, conn} <- QuackLake.open(),
+         :ok <- maybe_setup_s3(conn, s3_config),
+         :ok <- maybe_attach_lake(conn, config, s3_config) do
+      {:ok, conn}
+    end
+  end
+
+  defp maybe_setup_s3(_conn, nil), do: :ok
+  defp maybe_setup_s3(conn, s3) do
+    QuackLake.Secret.create_s3(conn, "s3_creds",
+      key_id: s3[:key_id],
+      secret: s3[:secret],
+      region: s3[:region]
+    )
+  end
+
+  defp maybe_attach_lake(_conn, %{lake_name: nil}, _s3), do: :ok
+  defp maybe_attach_lake(_conn, %{metadata_path: nil}, _s3), do: :ok
+  defp maybe_attach_lake(conn, config, nil) do
+    QuackLake.attach(conn, config[:lake_name] || "lake", config[:metadata_path])
+  end
+  defp maybe_attach_lake(conn, config, s3) do
+    QuackLake.attach(conn, config[:lake_name] || "lake", config[:metadata_path],
+      data_path: "s3://#{s3[:bucket]}/data/"
+    )
+  end
+end
+```
+
+**lib/my_app/application.ex**
+
+```elixir
+defmodule MyApp.Application do
+  use Application
+
+  @impl true
+  def start(_type, _args) do
+    children = [
+      # ... other children
+      {MyApp.LakeServer, name: MyApp.LakeServer}
+    ]
+
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+end
+```
+
+**config/runtime.exs**
+
+```elixir
+import Config
+
+config :my_app, :quack_lake,
+  lake_name: "lake",
+  metadata_path: System.get_env("DUCKLAKE_METADATA_PATH", "priv/lake.ducklake"),
+  s3: if System.get_env("AWS_ACCESS_KEY_ID") do
+    [
+      key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+      secret: System.get_env("AWS_SECRET_ACCESS_KEY"),
+      region: System.get_env("AWS_REGION", "us-east-1"),
+      bucket: System.get_env("DUCKLAKE_S3_BUCKET")
+    ]
+  end
+```
+
+**Usage**
+
+```elixir
+# Queries go through the supervised connection
+{:ok, rows} = MyApp.LakeServer.query("SELECT * FROM lake.users")
+rows = MyApp.LakeServer.query!("SELECT * FROM lake.users WHERE id = $1", [1])
+
+# Execute statements
+:ok = MyApp.LakeServer.execute("INSERT INTO lake.users VALUES ($1, $2)", [1, "Alice"])
+
+# Get the raw connection for advanced operations
+conn = MyApp.LakeServer.conn()
+{:ok, snapshots} = QuackLake.snapshots(conn, "lake")
+```
+
+> **Note:** A single GenServer serializes all queries. For concurrent workloads, consider a pool (e.g., using `poolboy`) or opening connections per-request.
+
 ## Module Reference
 
 | Module | Description |
