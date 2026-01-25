@@ -2,7 +2,7 @@ defmodule QuackLake.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/yourname/quack_lake"
+  @source_url "https://github.com/nyo16/quack_lake"
 
   def project do
     [
