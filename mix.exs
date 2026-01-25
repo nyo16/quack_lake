@@ -28,6 +28,9 @@ defmodule QuackLake.MixProject do
   defp deps do
     [
       {:duckdbex, "~> 0.3.9"},
+      {:ecto_sql, "~> 3.12"},
+      {:db_connection, "~> 2.7"},
+      {:jason, "~> 1.4", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end

@@ -42,11 +42,13 @@ end
 
 ## Features
 
+- **Ecto Adapters** - Full Ecto integration with `Ecto.Adapters.DuckDB` and `Ecto.Adapters.DuckLake`
 - **Simple API** - Ergonomic Elixir interface with `{:ok, result}` / `{:error, reason}` tuples
 - **Auto-setup** - Automatically installs and loads the DuckLake extension
 - **Result transformation** - Query results returned as lists of maps instead of raw tuples
 - **Time travel** - Query historical data at specific versions or timestamps
 - **Cloud storage** - Built-in support for S3, Azure Blob Storage, and GCS credentials
+- **Bulk Inserts** - High-performance Appender API for bulk data loading
 
 ## API Overview
 
@@ -569,6 +571,121 @@ conn = MyApp.LakeServer.conn()
 
 > **Note:** A single GenServer serializes all queries. For concurrent workloads, consider a pool (e.g., using `poolboy`) or opening connections per-request.
 
+## Ecto Adapters
+
+QuackLake provides two Ecto adapters for different use cases:
+
+### Ecto.Adapters.DuckDB (Single Writer)
+
+For local analytics with a single writer:
+
+```elixir
+# config/config.exs
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.DuckDB,
+  database: "priv/analytics.duckdb",
+  extensions: [:httpfs, :parquet, {:spatial, source: :core}]
+```
+
+```elixir
+# lib/my_app/repo.ex
+defmodule MyApp.Repo do
+  use Ecto.Repo,
+    otp_app: :my_app,
+    adapter: Ecto.Adapters.DuckDB
+
+  # Optional: Add raw query and appender support
+  use Ecto.Adapters.DuckDB.RawQuery
+end
+```
+
+### Ecto.Adapters.DuckLake (Concurrent Writers)
+
+For lakehouse deployments with concurrent writers:
+
+```elixir
+# config/config.exs
+config :my_app, MyApp.LakeRepo,
+  adapter: Ecto.Adapters.DuckLake,
+  database: "ducklake:analytics.ducklake",
+  pool_size: 5,
+  data_path: "s3://my-bucket/lake-data",
+  extensions: [:httpfs, {:ducklake, source: :core}],
+  secrets: [
+    {:my_s3, [
+      type: :s3,
+      key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+      secret: System.get_env("AWS_SECRET_ACCESS_KEY"),
+      region: "us-east-1"
+    ]}
+  ]
+```
+
+```elixir
+# lib/my_app/lake_repo.ex
+defmodule MyApp.LakeRepo do
+  use Ecto.Repo,
+    otp_app: :my_app,
+    adapter: Ecto.Adapters.DuckLake
+
+  use Ecto.Adapters.DuckDB.RawQuery
+end
+```
+
+### Using Ecto with DuckDB
+
+```elixir
+# Define schemas
+defmodule MyApp.User do
+  use Ecto.Schema
+
+  schema "users" do
+    field :name, :string
+    field :email, :string
+    timestamps()
+  end
+end
+
+# Standard Ecto operations
+MyApp.Repo.insert!(%User{name: "Alice", email: "alice@example.com"})
+MyApp.Repo.all(User)
+MyApp.Repo.get!(User, 1)
+
+# Raw SQL execution (with RawQuery)
+MyApp.Repo.exec!("COPY users TO 'users.parquet' (FORMAT PARQUET)")
+
+# High-performance bulk inserts with Appender
+{:ok, appender} = MyApp.Repo.appender(User)
+Enum.each(users, &MyApp.Repo.append(appender, &1))
+MyApp.Repo.close_appender(appender)
+```
+
+### Migrations
+
+```elixir
+defmodule MyApp.Repo.Migrations.CreateUsers do
+  use Ecto.Migration
+
+  def change do
+    create table(:users) do
+      add :name, :string
+      add :email, :string
+      add :metadata, :map
+      timestamps()
+    end
+
+    create index(:users, [:email])
+  end
+end
+```
+
+Run migrations:
+
+```bash
+mix ecto.create
+mix ecto.migrate
+```
+
 ## Module Reference
 
 | Module | Description |
@@ -580,8 +697,11 @@ conn = MyApp.LakeServer.conn()
 | `QuackLake.Snapshot` | Time travel and snapshot management |
 | `QuackLake.Secret` | Cloud storage credential management |
 | `QuackLake.Extension` | DuckDB extension helpers |
+| `QuackLake.Appender` | High-performance bulk insert API |
 | `QuackLake.Config` | Configuration struct |
 | `QuackLake.Error` | Error exception struct |
+| `Ecto.Adapters.DuckDB` | Ecto adapter for DuckDB (single writer) |
+| `Ecto.Adapters.DuckLake` | Ecto adapter for DuckLake (concurrent writers) |
 
 ## License
 
