@@ -422,6 +422,100 @@ defmodule MyApp.DataPlatform do
 end
 ```
 
+### Production DuckLake with PostgreSQL Catalog (AWS RDS)
+
+For production deployments, you can use PostgreSQL (e.g., AWS RDS) as DuckLake's metadata catalog instead of a local file. This provides a reliable, shared catalog with managed backups and replication.
+
+**Architecture:**
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│  DuckDB/Ecto    │────▶│   AWS RDS       │  (metadata catalog)
+│  (your app)     │     │   PostgreSQL    │
+└────────┬────────┘     └─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│    AWS S3       │  (actual data - parquet files)
+│  s3://bucket/   │
+└─────────────────┘
+```
+
+**Connection string format:**
+
+```
+ducklake:postgres:host=<host>;database=<db>;user=<user>;password=<pass>
+```
+
+**With the Ecto adapter:**
+
+```elixir
+# config/runtime.exs
+config :my_app, MyApp.LakeRepo,
+  adapter: Ecto.Adapters.DuckLake,
+  database: "ducklake:postgres:host=#{System.get_env("RDS_HOST")};database=#{System.get_env("RDS_DB")};user=#{System.get_env("RDS_USER")};password=#{System.get_env("RDS_PASSWORD")}",
+  pool_size: 5,
+  data_path: "s3://my-bucket/lake-data",
+  extensions: [:httpfs, {:ducklake, source: :core}],
+  secrets: [
+    {:my_s3, [
+      type: :s3,
+      key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+      secret: System.get_env("AWS_SECRET_ACCESS_KEY"),
+      region: "us-east-1"
+    ]}
+  ]
+```
+
+```elixir
+# lib/my_app/lake_repo.ex
+defmodule MyApp.LakeRepo do
+  use Ecto.Repo,
+    otp_app: :my_app,
+    adapter: Ecto.Adapters.DuckLake
+
+  use Ecto.Adapters.DuckDB.RawQuery
+end
+```
+
+**With raw QuackLake API:**
+
+```elixir
+{:ok, conn} = QuackLake.open()
+
+# Setup S3 credentials
+:ok = QuackLake.Secret.create_s3(conn, "s3_creds",
+  key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+  secret: System.get_env("AWS_SECRET_ACCESS_KEY"),
+  region: "us-east-1"
+)
+
+# Attach DuckLake with PostgreSQL catalog + S3 data storage
+:ok = QuackLake.Query.execute(conn, """
+  ATTACH 'ducklake:postgres:host=your-instance.rds.amazonaws.com;database=ducklake_meta;user=myuser;password=mypass'
+  AS lake (TYPE DUCKLAKE, DATA_PATH 's3://my-bucket/lake-data/')
+""")
+
+# Now use the lake
+:ok = QuackLake.Query.execute(conn, "CREATE TABLE lake.events (id INT, type TEXT, ts TIMESTAMP)")
+{:ok, rows} = QuackLake.query(conn, "SELECT * FROM lake.events")
+```
+
+**Benefits of this setup:**
+
+- **Concurrent writers** - Multiple app instances can write simultaneously
+- **Managed metadata** - RDS handles backups, failover, encryption at rest
+- **Scalable data** - S3 for unlimited, cost-effective storage
+- **Time travel** - Snapshots stored in the PostgreSQL catalog
+- **High availability** - Use RDS Multi-AZ for automatic failover
+
+**AWS RDS requirements:**
+
+- Create a dedicated database (e.g., `ducklake_meta`) - no special extensions needed
+- Security group must allow inbound connections from your app servers
+- Recommended: Use IAM authentication or Secrets Manager for credentials
+- For SSL: Add `sslmode=require` to the connection string
+
 ## Supervised Connection
 
 QuackLake uses plain functions by default (no process overhead). If you want a supervised connection that restarts on failure, wrap it in a GenServer:
