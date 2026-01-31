@@ -85,10 +85,15 @@ defmodule QuackLake.DBConnection.Protocol do
   end
 
   @impl DBConnection
-  def handle_execute(%Query{statement: statement}, params, _opts, %__MODULE__{conn: conn} = state) do
+  def handle_execute(
+        %Query{statement: statement} = query,
+        params,
+        _opts,
+        %__MODULE__{conn: conn} = state
+      ) do
     case execute_query(conn, statement, params) do
       {:ok, result} ->
-        {:ok, query_result(result), state}
+        {:ok, query, query_result(result), state}
 
       {:error, reason} ->
         # On error during transaction, mark state as error

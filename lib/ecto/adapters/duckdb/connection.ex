@@ -109,7 +109,8 @@ defmodule Ecto.Adapters.DuckDB.Connection do
     [
       "VALUES ",
       intersperse_reduce(rows, ?,, counter, fn row, counter ->
-        {[?(, intersperse_map_reduce(row, ?,, counter, &insert_each/2), ?)], counter}
+        {cols, counter} = intersperse_map_reduce(row, ?,, counter, &insert_each/2)
+        {[?(, cols, ?)], counter}
       end)
       |> elem(0)
     ]
@@ -1139,7 +1140,11 @@ defmodule Ecto.Adapters.DuckDB.Connection do
   @impl true
   def query(conn, sql, params, opts) do
     query = %Query{statement: sql}
-    DBConnection.execute(conn, query, params, opts)
+
+    case DBConnection.execute(conn, query, params, opts) do
+      {:ok, _query, result} -> {:ok, result}
+      {:error, _} = err -> err
+    end
   end
 
   @impl true

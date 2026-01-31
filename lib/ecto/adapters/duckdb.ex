@@ -299,18 +299,15 @@ defmodule Ecto.Adapters.DuckDB do
 
   defp encode_json(other), do: {:ok, other}
 
-  # JSON helpers - use built-in JSON (Elixir 1.18+) or Jason
+  # JSON helpers - use built-in JSON (Elixir 1.18+) or Erlang :json (OTP 27+)
 
   defp json_encode(value) do
     cond do
       Code.ensure_loaded?(JSON) ->
         {:ok, JSON.encode!(value)}
 
-      Code.ensure_loaded?(Jason) ->
-        {:ok, Jason.encode!(value)}
-
       true ->
-        {:error, :no_json_library}
+        {:ok, :json.encode(value) |> IO.iodata_to_binary()}
     end
   rescue
     _ -> {:error, :encode_failed}
@@ -321,11 +318,8 @@ defmodule Ecto.Adapters.DuckDB do
       Code.ensure_loaded?(JSON) ->
         {:ok, JSON.decode!(value)}
 
-      Code.ensure_loaded?(Jason) ->
-        {:ok, Jason.decode!(value)}
-
       true ->
-        {:error, :no_json_library}
+        {:ok, :json.decode(value)}
     end
   rescue
     _ -> {:error, :decode_failed}

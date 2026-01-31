@@ -244,11 +244,10 @@ defmodule Ecto.Adapters.DuckDB.Appender do
   defp encode_value(%Decimal{} = d), do: Decimal.to_float(d)
 
   defp encode_value(value) when is_map(value) and not is_struct(value) do
-    # Encode maps as JSON
-    cond do
-      Code.ensure_loaded?(JSON) -> JSON.encode!(value)
-      Code.ensure_loaded?(Jason) -> Jason.encode!(value)
-      true -> inspect(value)
+    # Encode maps as JSON - use built-in JSON (Elixir 1.18+) or Erlang :json (OTP 27+)
+    case Code.ensure_loaded?(JSON) do
+      true -> JSON.encode!(value)
+      false -> :json.encode(value) |> IO.iodata_to_binary()
     end
   end
 

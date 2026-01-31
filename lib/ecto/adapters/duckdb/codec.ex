@@ -142,32 +142,19 @@ defmodule Ecto.Adapters.DuckDB.Codec do
     |> Enum.map(fn {value, type} -> decode(value, type) end)
   end
 
-  # JSON encoding/decoding using the json_encode/json_decode approach
-  # This uses Jason if available, otherwise falls back to basic handling
+  # JSON encoding/decoding - use built-in JSON (Elixir 1.18+) or Erlang :json (OTP 27+)
 
   defp json_encode(value) do
     case Code.ensure_loaded?(JSON) do
-      true ->
-        JSON.encode!(value)
-
-      false ->
-        case Code.ensure_loaded?(Jason) do
-          true -> Jason.encode!(value)
-          false -> inspect(value)
-        end
+      true -> JSON.encode!(value)
+      false -> :json.encode(value) |> IO.iodata_to_binary()
     end
   end
 
   defp json_decode(value) when is_binary(value) do
     case Code.ensure_loaded?(JSON) do
-      true ->
-        JSON.decode!(value)
-
-      false ->
-        case Code.ensure_loaded?(Jason) do
-          true -> Jason.decode!(value)
-          false -> value
-        end
+      true -> JSON.decode!(value)
+      false -> :json.decode(value)
     end
   end
 
