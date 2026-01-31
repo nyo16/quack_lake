@@ -110,8 +110,8 @@ defmodule Ecto.Adapters.DuckDB do
   def dumpers(:boolean, type), do: [type, &encode_boolean/1]
   def dumpers(:date, type), do: [type]
   def dumpers(:time, type), do: [type]
-  def dumpers(:naive_datetime, type), do: [type]
-  def dumpers(:naive_datetime_usec, type), do: [type]
+  def dumpers(:naive_datetime, type), do: [type, &encode_naive_datetime/1]
+  def dumpers(:naive_datetime_usec, type), do: [type, &encode_naive_datetime/1]
   def dumpers(:utc_datetime, type), do: [type, &encode_utc_datetime/1]
   def dumpers(:utc_datetime_usec, type), do: [type, &encode_utc_datetime/1]
   def dumpers(:decimal, type), do: [type, &encode_decimal/1]
@@ -278,8 +278,15 @@ defmodule Ecto.Adapters.DuckDB do
   defp encode_boolean(nil), do: {:ok, nil}
   defp encode_boolean(other), do: {:ok, other}
 
+  defp encode_naive_datetime(%NaiveDateTime{} = ndt) do
+    {:ok, NaiveDateTime.to_iso8601(ndt)}
+  end
+
+  defp encode_naive_datetime(nil), do: {:ok, nil}
+  defp encode_naive_datetime(other), do: {:ok, other}
+
   defp encode_utc_datetime(%DateTime{} = dt) do
-    {:ok, DateTime.to_naive(dt)}
+    {:ok, NaiveDateTime.to_iso8601(DateTime.to_naive(dt))}
   end
 
   defp encode_utc_datetime(other), do: {:ok, other}
