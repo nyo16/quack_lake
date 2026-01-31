@@ -11,7 +11,7 @@ Add `quack_lake` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:quack_lake, "~> 0.1.0"}
+    {:quack_lake, "~> 0.2.5"}
   ]
 end
 ```
@@ -455,6 +455,7 @@ config :my_app, MyApp.LakeRepo,
   adapter: Ecto.Adapters.DuckLake,
   database: "ducklake:postgres:host=#{System.get_env("RDS_HOST")};database=#{System.get_env("RDS_DB")};user=#{System.get_env("RDS_USER")};password=#{System.get_env("RDS_PASSWORD")}",
   pool_size: 5,
+  lake_name: "lake",  # Short alias for the attached lake
   data_path: "s3://my-bucket/lake-data",
   extensions: [:httpfs, {:ducklake, source: :core}],
   secrets: [
@@ -703,6 +704,7 @@ config :my_app, MyApp.LakeRepo,
   adapter: Ecto.Adapters.DuckLake,
   database: "ducklake:analytics.ducklake",
   pool_size: 5,
+  lake_name: "lake",  # Custom short name (optional, overrides auto-generated)
   data_path: "s3://my-bucket/lake-data",
   extensions: [:httpfs, {:ducklake, source: :core}],
   secrets: [
@@ -714,6 +716,17 @@ config :my_app, MyApp.LakeRepo,
     ]}
   ]
 ```
+
+**DuckLake Adapter Options:**
+
+| Option | Description |
+|--------|-------------|
+| `database` | DuckLake connection string (e.g., `ducklake:analytics.ducklake` or `ducklake:postgres:host=...`) |
+| `pool_size` | Number of concurrent connections (default: 5) |
+| `lake_name` | Custom lake name alias (optional, auto-generated from path if not provided) |
+| `data_path` | Storage path for actual data (S3, local, etc.) |
+| `extensions` | List of DuckDB extensions to load |
+| `secrets` | Cloud storage credentials |
 
 ```elixir
 # lib/my_app/lake_repo.ex
@@ -796,6 +809,88 @@ mix ecto.migrate
 | `QuackLake.Error` | Error exception struct |
 | `Ecto.Adapters.DuckDB` | Ecto adapter for DuckDB (single writer) |
 | `Ecto.Adapters.DuckLake` | Ecto adapter for DuckLake (concurrent writers) |
+
+## Development
+
+### Prerequisites
+
+- Elixir 1.15+
+- Docker and Docker Compose (for integration tests)
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/nyo16/quack_lake.git
+cd quack_lake
+
+# Install dependencies
+mix deps.get
+
+# Run unit tests (no Docker required)
+mix test test/unit
+```
+
+### Integration Tests
+
+Integration tests require PostgreSQL and MinIO (S3-compatible storage) running via Docker:
+
+```bash
+# Start Docker services
+docker-compose up -d
+
+# Wait for services to be healthy
+docker-compose ps
+
+# Run all tests including integration
+INTEGRATION=true mix test
+
+# Run only integration tests
+INTEGRATION=true mix test test/integration
+
+# Run specific integration test file
+INTEGRATION=true mix test test/integration/postgres_catalog_test.exs
+```
+
+### Docker Services
+
+The `docker-compose.yml` provides:
+
+| Service | Port | Description |
+|---------|------|-------------|
+| PostgreSQL | 5432 | DuckLake metadata catalog |
+| MinIO | 9000 | S3-compatible object storage |
+| MinIO Console | 9001 | Web UI for MinIO |
+
+**Default Credentials:**
+
+| Service | Username | Password |
+|---------|----------|----------|
+| PostgreSQL | `quacklake` | `quacklake_secret` |
+| MinIO | `minioadmin` | `minioadmin123` |
+
+### Test Structure
+
+```
+test/
+├── unit/                    # Unit tests (async, no Docker)
+│   ├── config_test.exs
+│   └── config/
+│       ├── attach_test.exs
+│       ├── extension_test.exs
+│       └── secret_test.exs
+├── integration/             # Integration tests (require Docker)
+│   ├── postgres_catalog_test.exs
+│   ├── minio_s3_test.exs
+│   ├── ducklake_lifecycle_test.exs
+│   └── ecto/
+│       ├── duckdb_adapter_test.exs
+│       └── ducklake_adapter_test.exs
+└── support/                 # Test helpers
+    ├── data_case.ex
+    ├── docker_helper.ex
+    └── minio_helper.ex
+```
 
 ## License
 

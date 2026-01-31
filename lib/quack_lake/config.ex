@@ -29,6 +29,10 @@ defmodule QuackLake.Config do
     :path,
     # For Ecto compatibility
     :database,
+    # Data path for DuckLake (S3, local, etc.)
+    :data_path,
+    # Custom lake name (overrides auto-generated name from path)
+    :lake_name,
     # Connection pool size (1 for DuckDB, configurable for DuckLake)
     pool_size: 1,
     # Extensions to install/load
@@ -49,6 +53,8 @@ defmodule QuackLake.Config do
   @type t :: %__MODULE__{
           path: String.t() | nil,
           database: String.t() | nil,
+          data_path: String.t() | nil,
+          lake_name: String.t() | nil,
           pool_size: pos_integer(),
           extensions: [atom() | {atom(), keyword()}],
           secrets: [{atom(), keyword()}],
@@ -93,6 +99,8 @@ defmodule QuackLake.Config do
     %__MODULE__{
       path: path,
       database: opts[:database],
+      data_path: opts[:data_path],
+      lake_name: opts[:lake_name],
       pool_size: Keyword.get(opts, :pool_size, 1),
       extensions: Keyword.get(opts, :extensions, []),
       secrets: Keyword.get(opts, :secrets, []),
