@@ -107,10 +107,12 @@ defmodule Ecto.Adapters.DuckLake do
 
   @impl Ecto.Adapter
   def dumpers(:boolean, type), do: [type, &encode_boolean/1]
+  def dumpers(:binary_id, type), do: [type, &encode_uuid/1]
+  def dumpers(Ecto.UUID, type), do: [type, &encode_uuid/1]
   def dumpers(:date, type), do: [type]
   def dumpers(:time, type), do: [type]
-  def dumpers(:naive_datetime, type), do: [type]
-  def dumpers(:naive_datetime_usec, type), do: [type]
+  def dumpers(:naive_datetime, type), do: [type, &encode_naive_datetime/1]
+  def dumpers(:naive_datetime_usec, type), do: [type, &encode_naive_datetime/1]
   def dumpers(:utc_datetime, type), do: [type, &encode_utc_datetime/1]
   def dumpers(:utc_datetime_usec, type), do: [type, &encode_utc_datetime/1]
   def dumpers(:decimal, type), do: [type, &encode_decimal/1]
@@ -333,8 +335,24 @@ defmodule Ecto.Adapters.DuckLake do
   defp encode_boolean(nil), do: {:ok, nil}
   defp encode_boolean(other), do: {:ok, other}
 
+  defp encode_uuid(nil), do: {:ok, nil}
+
+  defp encode_uuid(<<_::128>> = uuid) do
+    {:ok, Ecto.UUID.cast!(uuid)}
+  end
+
+  defp encode_uuid(uuid) when is_binary(uuid), do: {:ok, uuid}
+  defp encode_uuid(other), do: {:ok, other}
+
+  defp encode_naive_datetime(%NaiveDateTime{} = ndt) do
+    {:ok, NaiveDateTime.to_iso8601(ndt)}
+  end
+
+  defp encode_naive_datetime(nil), do: {:ok, nil}
+  defp encode_naive_datetime(other), do: {:ok, other}
+
   defp encode_utc_datetime(%DateTime{} = dt) do
-    {:ok, DateTime.to_naive(dt)}
+    {:ok, NaiveDateTime.to_iso8601(DateTime.to_naive(dt))}
   end
 
   defp encode_utc_datetime(other), do: {:ok, other}
