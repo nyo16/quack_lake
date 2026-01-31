@@ -255,20 +255,72 @@ defmodule QuackLake.DBConnection.Protocol do
   end
 
   defp execute_query(conn, statement, params) do
-    case Duckdbex.query(conn, statement, params) do
+    encoded_params = Enum.map(params, &encode_param/1)
+
+    case Duckdbex.query(conn, statement, encoded_params) do
       {:ok, ref} -> {:ok, ref}
       {:error, reason} -> {:error, reason}
     end
   end
 
+  # Parameter encoding for raw queries
+  defp encode_param(%Decimal{} = d), do: Decimal.to_float(d)
+  defp encode_param(%DateTime{} = dt), do: DateTime.to_naive(dt)
+  defp encode_param(%Date{} = d), do: d
+  defp encode_param(%Time{} = t), do: t
+  defp encode_param(%NaiveDateTime{} = ndt), do: ndt
+
+  defp encode_param(<<_::128>> = uuid) do
+    case Ecto.UUID.cast(uuid) do
+      {:ok, string_uuid} -> string_uuid
+      :error -> uuid
+    end
+  end
+
+  defp encode_param(value), do: value
+
   defp query_result(ref) do
     columns = Duckdbex.columns(ref)
     rows = Duckdbex.fetch_all(ref)
-    num_rows = length(rows)
-    command = detect_command(columns, rows)
+    decoded_rows = Enum.map(rows, &decode_row/1)
+    num_rows = length(decoded_rows)
+    command = detect_command(columns, decoded_rows)
 
-    Result.new(command, columns, rows, num_rows)
+    Result.new(command, columns, decoded_rows, num_rows)
   end
+
+  defp decode_row(row) when is_list(row) do
+    Enum.map(row, &decode_value/1)
+  end
+
+  # Decimal: {value, base, scale} tuple from DuckDB
+  defp decode_value({value, base, scale})
+       when is_integer(value) and is_integer(base) and is_integer(scale) do
+    # DuckDB returns decimals as {unscaled_value, base, scale}
+    # Convert to Decimal struct
+    sign = if value < 0, do: -1, else: 1
+    Decimal.new(sign, abs(value), -scale)
+  end
+
+  # HUGEINT: {high, low} tuple from DuckDB (128-bit integer as two 64-bit parts)
+  # The high part is the upper 64 bits, low is the lower 64 bits
+  defp decode_value({high, low}) when is_integer(high) and is_integer(low) do
+    # Combine high and low parts into a single integer
+    # high is signed, low is unsigned
+    import Bitwise
+    (high <<< 64) + low
+  end
+
+  # UUID binary (16 bytes)
+  defp decode_value(<<_::128>> = uuid) do
+    case Ecto.UUID.cast(uuid) do
+      {:ok, string_uuid} -> string_uuid
+      :error -> uuid
+    end
+  end
+
+  # Pass through other values
+  defp decode_value(value), do: value
 
   defp detect_command(columns, _rows) when is_list(columns) and length(columns) > 0, do: :select
   defp detect_command(_, _), do: :execute

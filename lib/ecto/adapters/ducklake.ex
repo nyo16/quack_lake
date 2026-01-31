@@ -95,6 +95,9 @@ defmodule Ecto.Adapters.DuckLake do
 
   @impl Ecto.Adapter
   def loaders(:boolean, type), do: [&decode_boolean/1, type]
+  def loaders(:binary_id, type), do: [type]
+  def loaders(Ecto.UUID, type), do: [type]
+  def loaders(:uuid, type), do: [type]
   def loaders(:date, type), do: [&decode_date/1, type]
   def loaders(:time, type), do: [&decode_time/1, type]
   def loaders(:naive_datetime, type), do: [&decode_naive_datetime/1, type]
@@ -109,6 +112,7 @@ defmodule Ecto.Adapters.DuckLake do
   def dumpers(:boolean, type), do: [type, &encode_boolean/1]
   def dumpers(:binary_id, type), do: [type, &encode_uuid/1]
   def dumpers(Ecto.UUID, type), do: [type, &encode_uuid/1]
+  def dumpers(:uuid, type), do: [type, &encode_uuid/1]
   def dumpers(:date, type), do: [type]
   def dumpers(:time, type), do: [type]
   def dumpers(:naive_datetime, type), do: [type, &encode_naive_datetime/1]
@@ -207,12 +211,14 @@ defmodule Ecto.Adapters.DuckLake do
 
   defp lake_exists?(path) do
     cond do
-      # Local file
+      # Local file - check filesystem
       File.exists?(path) -> true
-      # Remote paths (S3, etc.) - assume they exist if configured
-      String.starts_with?(path, "s3://") -> false
-      String.starts_with?(path, "az://") -> false
-      String.starts_with?(path, "gs://") -> false
+      # Remote paths (S3, Azure, GCS) - we cannot easily check existence,
+      # so assume they exist if configured to avoid always recreating
+      String.starts_with?(path, "s3://") -> true
+      String.starts_with?(path, "az://") -> true
+      String.starts_with?(path, "gs://") -> true
+      # Local path that doesn't exist
       true -> false
     end
   end

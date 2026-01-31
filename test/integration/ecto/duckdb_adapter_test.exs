@@ -37,8 +37,13 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
     {:ok, pid} = TestRepo.start_link(database: db_path, pool_size: 1)
 
     on_exit(fn ->
-      # Stop repo and cleanup
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      # Stop repo and cleanup - catch already stopped errors
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+
       File.rm(db_path)
     end)
 

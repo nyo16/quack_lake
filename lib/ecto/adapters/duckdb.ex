@@ -96,6 +96,9 @@ defmodule Ecto.Adapters.DuckDB do
 
   @impl Ecto.Adapter
   def loaders(:boolean, type), do: [&decode_boolean/1, type]
+  def loaders(:binary_id, type), do: [type]
+  def loaders(Ecto.UUID, type), do: [type]
+  def loaders(:uuid, type), do: [type]
   def loaders(:date, type), do: [&decode_date/1, type]
   def loaders(:time, type), do: [&decode_time/1, type]
   def loaders(:naive_datetime, type), do: [&decode_naive_datetime/1, type]
@@ -110,6 +113,7 @@ defmodule Ecto.Adapters.DuckDB do
   def dumpers(:boolean, type), do: [type, &encode_boolean/1]
   def dumpers(:binary_id, type), do: [type, &encode_uuid/1]
   def dumpers(Ecto.UUID, type), do: [type, &encode_uuid/1]
+  def dumpers(:uuid, type), do: [type, &encode_uuid/1]
   def dumpers(:date, type), do: [type]
   def dumpers(:time, type), do: [type]
   def dumpers(:naive_datetime, type), do: [type, &encode_naive_datetime/1]

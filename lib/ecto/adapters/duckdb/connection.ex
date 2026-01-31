@@ -1162,7 +1162,7 @@ defmodule Ecto.Adapters.DuckDB.Connection do
     query = %Query{statement: sql}
 
     case DBConnection.execute(conn, query, params, opts) do
-      {:ok, result} -> {:ok, query, result}
+      {:ok, _query, result} -> {:ok, query, result}
       {:error, _} = err -> err
     end
   end

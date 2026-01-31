@@ -243,6 +243,11 @@ defmodule Ecto.Adapters.DuckDB.Appender do
   defp encode_value(%NaiveDateTime{} = ndt), do: ndt
   defp encode_value(%Decimal{} = d), do: Decimal.to_float(d)
 
+  # UUIDs - convert binary UUID to string format for DuckDB
+  defp encode_value(<<_::128>> = uuid) do
+    Ecto.UUID.cast!(uuid)
+  end
+
   defp encode_value(value) when is_map(value) and not is_struct(value) do
     # Encode maps as JSON - use built-in JSON (Elixir 1.18+) or Erlang :json (OTP 27+)
     case Code.ensure_loaded?(JSON) do
