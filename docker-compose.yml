@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quacklake-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quacklake}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quacklake_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-ducklake_catalog}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quacklake} -d ${POSTGRES_DB:-ducklake_catalog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: quacklake-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio_init:
+    image: minio/mc:latest
+    container_name: quacklake-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      DUCKLAKE_S3_BUCKET: ${DUCKLAKE_S3_BUCKET:-quacklake-test}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing myminio/$${DUCKLAKE_S3_BUCKET};
+      mc anonymous set download myminio/$${DUCKLAKE_S3_BUCKET};
+      echo 'Bucket $${DUCKLAKE_S3_BUCKET} created successfully';
+      exit 0;
+      "
+
+volumes:
+  postgres_data:
+  minio_data:

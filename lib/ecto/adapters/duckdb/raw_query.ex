@@ -121,10 +121,14 @@ defmodule Ecto.Adapters.DuckDB.RawQuery do
         query = %QuackLake.DBConnection.Query{statement: sql}
         timeout = Keyword.get(opts, :timeout, 15_000)
 
-        __MODULE__
-        |> Ecto.Adapter.lookup_meta()
-        |> Map.get(:pid)
-        |> DBConnection.execute(query, [], timeout: timeout)
+        # DBConnection.execute returns {:ok, query, result}, extract just the result
+        case __MODULE__
+             |> Ecto.Adapter.lookup_meta()
+             |> Map.get(:pid)
+             |> DBConnection.execute(query, [], timeout: timeout) do
+          {:ok, _query, result} -> {:ok, result}
+          {:error, reason} -> {:error, reason}
+        end
       end
 
       @doc """

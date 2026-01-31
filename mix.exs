@@ -1,7 +1,7 @@
 defmodule QuackLake.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.5"
   @source_url "https://github.com/nyo16/quack_lake"
 
   def project do
@@ -9,8 +9,10 @@ defmodule QuackLake.MixProject do
       app: :quack_lake,
       version: @version,
       elixir: "~> 1.15",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       name: "QuackLake",
       description: "Elixir library for easy DuckLake access, setup, and management",
       package: package(),
@@ -37,11 +39,22 @@ defmodule QuackLake.MixProject do
 
   defp package do
     [
-      licenses: ["MIT"],
+      licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @source_url
       },
       files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+    ]
+  end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
+  defp aliases do
+    [
+      "test.unit": ["test test/unit"],
+      "test.integration": ["cmd INTEGRATION=true mix test test/integration"],
+      "test.all": ["cmd INTEGRATION=true mix test"]
     ]
   end
 
