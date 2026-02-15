@@ -15,8 +15,12 @@ defmodule QuackLake.Secret do
     * `:key_id` - AWS Access Key ID (required)
     * `:secret` - AWS Secret Access Key (required)
     * `:region` - AWS region (required)
-    * `:endpoint` - Custom endpoint for S3-compatible storage (optional)
+    * `:endpoint` - Custom endpoint for S3-compatible storage (optional).
+      Accepts full URLs (e.g. `http://localhost:9000`) — the scheme is
+      stripped automatically since DuckDB expects `host:port` only.
     * `:use_ssl` - Whether to use SSL. Defaults to `true`.
+    * `:url_style` - S3 URL style: `"vhost"` (default) or `"path"`.
+      Use `"path"` for S3-compatible services like MinIO.
 
   ## Examples
 
@@ -24,6 +28,16 @@ defmodule QuackLake.Secret do
       ...>   key_id: "AKIAIOSFODNN7EXAMPLE",
       ...>   secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
       ...>   region: "us-east-1"
+      ...> )
+      :ok
+
+      iex> QuackLake.Secret.create_s3(conn, "minio_s3",
+      ...>   key_id: "minioadmin",
+      ...>   secret: "minioadmin123",
+      ...>   region: "us-east-1",
+      ...>   endpoint: "http://localhost:9000",
+      ...>   use_ssl: false,
+      ...>   url_style: "path"
       ...> )
       :ok
 
@@ -35,6 +49,7 @@ defmodule QuackLake.Secret do
     region = Keyword.fetch!(opts, :region)
     endpoint = opts[:endpoint]
     use_ssl = Keyword.get(opts, :use_ssl, true)
+    url_style = opts[:url_style]
 
     secret_opts =
       [
@@ -45,6 +60,7 @@ defmodule QuackLake.Secret do
       ]
       |> maybe_add_endpoint(endpoint)
       |> maybe_add_ssl(use_ssl)
+      |> maybe_add_url_style(url_style)
       |> Enum.join(", ")
 
     sql = "CREATE SECRET #{name} (#{secret_opts})"
@@ -160,11 +176,22 @@ defmodule QuackLake.Secret do
   defp maybe_add_endpoint(opts, nil), do: opts
 
   defp maybe_add_endpoint(opts, endpoint) do
-    opts ++ ["ENDPOINT '#{escape_string(endpoint)}'"]
+    opts ++ ["ENDPOINT '#{escape_string(normalize_endpoint(endpoint))}'"]
   end
 
   defp maybe_add_ssl(opts, true), do: opts ++ ["USE_SSL true"]
   defp maybe_add_ssl(opts, false), do: opts ++ ["USE_SSL false"]
+
+  defp maybe_add_url_style(opts, nil), do: opts
+  defp maybe_add_url_style(opts, style), do: opts ++ ["URL_STYLE '#{escape_string(style)}'"]
+
+  # DuckDB expects ENDPOINT as "host:port" without a scheme.
+  # Strip http:// or https:// if the caller passes a full URL.
+  defp normalize_endpoint(endpoint) do
+    endpoint
+    |> String.replace(~r{^https?://}, "")
+    |> String.trim_trailing("/")
+  end
 
   defp escape_string(str) do
     String.replace(str, "'", "''")

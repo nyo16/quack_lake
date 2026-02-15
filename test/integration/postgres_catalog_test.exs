@@ -11,7 +11,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
 
   describe "postgres_scanner extension" do
     test "can attach PostgreSQL database", %{local_path: _local_path} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       # Install and load postgres_scanner
       {:ok, _} = Duckdbex.query(conn, "INSTALL postgres_scanner")
@@ -35,7 +35,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
     end
 
     test "can query PostgreSQL information_schema", %{local_path: _local_path} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       {:ok, _} = Duckdbex.query(conn, "INSTALL postgres_scanner")
       {:ok, _} = Duckdbex.query(conn, "LOAD postgres_scanner")
@@ -55,7 +55,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
 
   describe "DuckLake with PostgreSQL catalog" do
     test "can attach DuckLake with PostgreSQL catalog", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("pg_catalog_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -73,7 +73,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
     end
 
     test "can create table in DuckLake", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("table_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -101,7 +101,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
     end
 
     test "can insert and query data", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("data_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -132,7 +132,7 @@ defmodule QuackLake.Integration.PostgresCatalogTest do
     end
 
     test "can detach and reattach lake", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("reattach_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)

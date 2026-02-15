@@ -64,13 +64,26 @@ defmodule QuackLake.Lake do
 
   # Private functions
 
-  defp build_attach_sql(name, ducklake_path, nil) do
-    "ATTACH '#{escape_string(ducklake_path)}' AS #{name} (TYPE DUCKLAKE)"
+  # When the path starts with "ducklake:", DuckDB infers the type automatically.
+  # Adding TYPE DUCKLAKE in this case causes the extension to double-parse the
+  # connection string and silently drop other options like DATA_PATH.
+  defp build_attach_sql(name, ducklake_path, data_path) do
+    opts =
+      [type_opt(ducklake_path), data_path_opt(data_path)]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
+
+    case opts do
+      "" -> "ATTACH '#{escape_string(ducklake_path)}' AS #{name}"
+      _ -> "ATTACH '#{escape_string(ducklake_path)}' AS #{name} (#{opts})"
+    end
   end
 
-  defp build_attach_sql(name, ducklake_path, data_path) do
-    "ATTACH '#{escape_string(ducklake_path)}' AS #{name} (TYPE DUCKLAKE, DATA_PATH '#{escape_string(data_path)}')"
-  end
+  defp type_opt("ducklake:" <> _), do: nil
+  defp type_opt(_), do: "TYPE DUCKLAKE"
+
+  defp data_path_opt(nil), do: nil
+  defp data_path_opt(path), do: "DATA_PATH '#{escape_string(path)}'"
 
   defp escape_string(str) do
     String.replace(str, "'", "''")

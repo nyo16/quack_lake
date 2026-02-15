@@ -11,7 +11,7 @@ defmodule QuackLake.Integration.MinioS3Test do
 
   describe "S3 secrets" do
     test "can create S3 secret", %{local_path: _local_path} do
-      {:ok, db, conn} = open_duckdb_with_s3()
+      {:ok, _db, conn} = open_duckdb_with_s3()
 
       # Secret was already configured via SET commands in open_duckdb_with_s3
       # Test that we can also create a named secret
@@ -30,7 +30,7 @@ defmodule QuackLake.Integration.MinioS3Test do
 
   describe "Parquet operations" do
     test "can write Parquet to S3", %{s3_path: s3_path} do
-      {:ok, db, conn} = open_duckdb_with_s3()
+      {:ok, _db, conn} = open_duckdb_with_s3()
 
       parquet_path = "#{s3_path}/test.parquet"
 
@@ -49,7 +49,7 @@ defmodule QuackLake.Integration.MinioS3Test do
     end
 
     test "can read Parquet from S3", %{s3_path: s3_path} do
-      {:ok, db, conn} = open_duckdb_with_s3()
+      {:ok, _db, conn} = open_duckdb_with_s3()
 
       parquet_path = "#{s3_path}/read_test.parquet"
 
@@ -77,7 +77,7 @@ defmodule QuackLake.Integration.MinioS3Test do
     end
 
     test "can query multiple Parquet files with glob", %{s3_path: s3_path} do
-      {:ok, db, conn} = open_duckdb_with_s3()
+      {:ok, _db, conn} = open_duckdb_with_s3()
 
       # Write multiple parquet files
       for i <- 1..3 do
@@ -98,7 +98,7 @@ defmodule QuackLake.Integration.MinioS3Test do
 
   describe "DuckLake with S3 data storage" do
     test "can create DuckLake with S3 data_path", %{s3_path: s3_path, test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_full()
+      {:ok, _db, conn} = open_duckdb_full()
 
       lake_name = unique_lake_name("s3_#{test_name}")
       data_path = "#{s3_path}/lake_data"
@@ -134,7 +134,7 @@ defmodule QuackLake.Integration.MinioS3Test do
       data_path = "#{s3_path}/persist_data"
 
       # First connection: create and populate
-      {:ok, db1, conn1} = open_duckdb_full()
+      {:ok, _db1, conn1} = open_duckdb_full()
       {:ok, ^lake_name} = attach_ducklake(conn1, lake_name, data_path: data_path)
 
       {:ok, _} =
@@ -148,7 +148,7 @@ defmodule QuackLake.Integration.MinioS3Test do
         """)
 
       # Second connection: verify data persists
-      {:ok, db2, conn2} = open_duckdb_full()
+      {:ok, _db2, conn2} = open_duckdb_full()
       {:ok, ^lake_name} = attach_ducklake(conn2, lake_name, data_path: data_path)
 
       {:ok, ref} = Duckdbex.query(conn2, "SELECT COUNT(*) FROM #{lake_name}.main.persistent")
