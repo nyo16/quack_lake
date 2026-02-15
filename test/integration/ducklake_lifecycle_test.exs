@@ -11,7 +11,7 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
 
   describe "table lifecycle" do
     test "create, alter, and drop table", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("lifecycle_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -72,7 +72,7 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
 
   describe "data operations" do
     test "insert, update, delete operations", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("crud_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -113,8 +113,8 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
       assert rows == [[1, "active"], [3, "archived"]]
     end
 
-    test "bulk insert with COPY", %{test_name: test_name, local_path: local_path} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+    test "bulk insert with COPY", %{test_name: test_name} do
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("bulk_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -143,7 +143,7 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
 
   describe "transactions" do
     test "commit and rollback", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("txn_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -179,7 +179,7 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
 
   describe "time travel" do
     test "can query historical snapshots", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("timetravel_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)
@@ -222,7 +222,7 @@ defmodule QuackLake.Integration.DuckLakeLifecycleTest do
 
   describe "schema operations" do
     test "create and use multiple schemas", %{test_name: test_name} do
-      {:ok, db, conn} = open_duckdb_with_ducklake()
+      {:ok, _db, conn} = open_duckdb_with_ducklake()
 
       lake_name = unique_lake_name("schema_#{test_name}")
       {:ok, ^lake_name} = attach_ducklake(conn, lake_name)

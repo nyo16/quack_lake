@@ -7,8 +7,6 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
 
   use ExUnit.Case, async: true
 
-  alias QuackLake.Config
-
   # Define a test repo module
   defmodule TestRepo do
     use Ecto.Repo,
