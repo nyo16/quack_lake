@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-02-14
+
+### Added
+
+- **Test App**: Full demo application (`test_app/`) showcasing connections, Ecto adapters, appender bulk inserts, extensions, lake management, time travel, secrets, and PostgreSQL scanner usage
+- **UUID support**: Loaders/dumpers for `:binary_id`, `Ecto.UUID`, and `:uuid` types in DuckDB and DuckLake Ecto adapters, including appender bulk inserts
+- **NaiveDatetime & DateTime encoding**: Proper type encoding for `NaiveDateTime` and `DateTime` in query parameters for both adapters
+- **Value decoding**: `decode_value` for Decimal tuples and HUGEINT in raw SQL results; `encode_param` for Decimal, DateTime, UUID in query parameters
+- **S3 secret options**: `url_style` option (`"vhost"` or `"path"`) for S3-compatible services like MinIO
+
+### Fixed
+
+- **ATTACH SQL generation**: Fixed `TYPE DUCKLAKE` being added when path starts with `ducklake:`, which caused DuckDB to double-parse the connection string and silently drop options like `DATA_PATH`
+- **S3 endpoint normalization**: Strip `http://` or `https://` scheme from endpoint URLs since DuckDB expects `host:port` only
+- **`prepare_execute` pattern match**: Handle `DBConnection.execute/4` return correctly in both Protocol and LakeProtocol
+- **`lake_exists?`**: Assume remote paths (S3/Azure/GCS) exist instead of failing on file checks
+- **Test cleanup**: Fix race condition with `try/catch` on `GenServer.stop`
+
+### Changed
+
+- Bumped dependencies (duckdbex)
+- Improved ATTACH SQL builder to conditionally include TYPE and DATA_PATH options
+
 ## [0.2.5] - 2025-01-31
 
 ### Added
@@ -69,5 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial public release with full API
 
+[0.2.7]: https://github.com/nyo16/quack_lake/compare/v0.2.5...v0.2.7
 [0.2.5]: https://github.com/nyo16/quack_lake/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/nyo16/quack_lake/releases/tag/v0.2.0
