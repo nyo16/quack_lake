@@ -43,6 +43,18 @@ defmodule QuackLake.ConfigTest do
       assert config.lake_name == "my_lake"
     end
 
+    test "creates config with metadata_schema" do
+      config = Config.new(database: "ducklake:postgres:...", metadata_schema: "ducklake")
+
+      assert config.metadata_schema == "ducklake"
+    end
+
+    test "metadata_schema defaults to nil" do
+      config = Config.new()
+
+      assert config.metadata_schema == nil
+    end
+
     test "creates config with extensions" do
       config = Config.new(extensions: [:httpfs, {:spatial, source: :core}])
 
@@ -118,6 +130,16 @@ defmodule QuackLake.ConfigTest do
         )
 
       assert config.data_path == "s3://bucket/data"
+    end
+
+    test "preserves metadata_schema" do
+      config =
+        Config.from_ecto_opts(
+          database: "ducklake:postgres:...",
+          metadata_schema: "ducklake"
+        )
+
+      assert config.metadata_schema == "ducklake"
     end
   end
 

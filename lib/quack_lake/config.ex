@@ -33,6 +33,8 @@ defmodule QuackLake.Config do
     :data_path,
     # Custom lake name (overrides auto-generated name from path)
     :lake_name,
+    # Schema in the catalog database for DuckLake metadata tables
+    :metadata_schema,
     # Connection pool size (1 for DuckDB, configurable for DuckLake)
     pool_size: 1,
     # Extensions to install/load
@@ -55,6 +57,7 @@ defmodule QuackLake.Config do
           database: String.t() | nil,
           data_path: String.t() | nil,
           lake_name: String.t() | nil,
+          metadata_schema: String.t() | nil,
           pool_size: pos_integer(),
           extensions: [atom() | {atom(), keyword()}],
           secrets: [{atom(), keyword()}],
@@ -77,6 +80,7 @@ defmodule QuackLake.Config do
     * `:extensions` - List of extensions to install and load.
     * `:secrets` - List of secrets for cloud storage access.
     * `:attach` - List of databases to attach.
+    * `:metadata_schema` - Schema in the catalog database for DuckLake metadata tables. Useful for storing metadata in a PostgreSQL schema other than `public`.
     * `:auto_install_extensions` - Whether to auto-install required extensions. Defaults to `true`.
     * `:auto_load_extensions` - Whether to auto-load required extensions. Defaults to `true`.
 
@@ -101,6 +105,7 @@ defmodule QuackLake.Config do
       database: opts[:database],
       data_path: opts[:data_path],
       lake_name: opts[:lake_name],
+      metadata_schema: opts[:metadata_schema],
       pool_size: Keyword.get(opts, :pool_size, 1),
       extensions: Keyword.get(opts, :extensions, []),
       secrets: Keyword.get(opts, :secrets, []),

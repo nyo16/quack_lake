@@ -23,6 +23,7 @@ defmodule Ecto.Adapters.DuckLake do
     * `:database` - Path to the DuckLake. Use `ducklake:` prefix for lakehouse format.
     * `:pool_size` - Connection pool size. Defaults to `5`.
     * `:data_path` - Storage path for lakehouse data (S3, Azure, GCS, local).
+    * `:metadata_schema` - Schema in the catalog database for DuckLake metadata tables. Useful for storing metadata in a PostgreSQL schema other than `public`.
     * `:extensions` - List of extensions to install and load.
     * `:secrets` - List of secrets for cloud storage access.
     * `:attach` - List of additional databases to attach.
@@ -130,12 +131,13 @@ defmodule Ecto.Adapters.DuckLake do
   def storage_up(opts) do
     database = Keyword.fetch!(opts, :database)
     data_path = opts[:data_path]
+    metadata_schema = opts[:metadata_schema]
 
     # Parse ducklake: prefix
     lake_path = parse_lake_path(database)
 
     if lake_path && !lake_exists?(lake_path) do
-      case create_lake(lake_path, data_path) do
+      case create_lake(lake_path, data_path, metadata_schema) do
         :ok -> :ok
         {:error, reason} -> {:error, reason}
       end
@@ -223,7 +225,7 @@ defmodule Ecto.Adapters.DuckLake do
     end
   end
 
-  defp create_lake(lake_path, data_path) do
+  defp create_lake(lake_path, data_path, metadata_schema) do
     # Open a temporary connection to create the lake
     case Duckdbex.open() do
       {:ok, db} ->
@@ -232,7 +234,7 @@ defmodule Ecto.Adapters.DuckLake do
         # Install and load ducklake extension
         with {:ok, _} <- Duckdbex.query(conn, "INSTALL ducklake FROM core"),
              {:ok, _} <- Duckdbex.query(conn, "LOAD ducklake"),
-             :ok <- do_create_lake(conn, lake_path, data_path) do
+             :ok <- do_create_lake(conn, lake_path, data_path, metadata_schema) do
           :ok
         else
           {:error, reason} -> {:error, reason}
@@ -243,25 +245,17 @@ defmodule Ecto.Adapters.DuckLake do
     end
   end
 
-  defp do_create_lake(conn, lake_path, nil) do
-    # Create lake without explicit data path
-    sql = "ATTACH '#{escape_string(lake_path)}' AS new_lake (TYPE DUCKLAKE)"
+  defp do_create_lake(conn, lake_path, data_path, metadata_schema) do
+    attach_opts =
+      [
+        "TYPE DUCKLAKE",
+        if(data_path, do: "DATA_PATH '#{escape_string(data_path)}'"),
+        if(metadata_schema, do: "METADATA_SCHEMA '#{escape_string(metadata_schema)}'")
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
 
-    case Duckdbex.query(conn, sql) do
-      {:ok, _} ->
-        Duckdbex.query(conn, "DETACH new_lake")
-        :ok
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp do_create_lake(conn, lake_path, data_path) do
-    sql = """
-    ATTACH '#{escape_string(lake_path)}' AS new_lake
-    (TYPE DUCKLAKE, DATA_PATH '#{escape_string(data_path)}')
-    """
+    sql = "ATTACH '#{escape_string(lake_path)}' AS new_lake (#{attach_opts})"
 
     case Duckdbex.query(conn, sql) do
       {:ok, _} ->

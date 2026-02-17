@@ -232,8 +232,9 @@ defmodule QuackLake.DBConnection.LakeProtocol do
         # Allow custom lake_name from config, fall back to extracted name
         lake_name = config.lake_name || extract_lake_name(lake_path)
         data_path = config.data_path
+        metadata_schema = config.metadata_schema
 
-        sql = build_lake_attach_sql(lake_name, lake_path, data_path)
+        sql = build_lake_attach_sql(lake_name, lake_path, data_path, metadata_schema)
 
         case Duckdbex.query(conn, sql) do
           {:ok, _ref} -> {:ok, lake_name}
@@ -252,12 +253,17 @@ defmodule QuackLake.DBConnection.LakeProtocol do
     |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
 
-  defp build_lake_attach_sql(lake_name, lake_path, nil) do
-    "ATTACH '#{escape_string(lake_path)}' AS #{lake_name} (TYPE DUCKLAKE)"
-  end
+  defp build_lake_attach_sql(lake_name, lake_path, data_path, metadata_schema) do
+    opts =
+      [
+        "TYPE DUCKLAKE",
+        if(data_path, do: "DATA_PATH '#{escape_string(data_path)}'"),
+        if(metadata_schema, do: "METADATA_SCHEMA '#{escape_string(metadata_schema)}'")
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
 
-  defp build_lake_attach_sql(lake_name, lake_path, data_path) do
-    "ATTACH '#{escape_string(lake_path)}' AS #{lake_name} (TYPE DUCKLAKE, DATA_PATH '#{escape_string(data_path)}')"
+    "ATTACH '#{escape_string(lake_path)}' AS #{lake_name} (#{opts})"
   end
 
   defp install_extensions(conn, %Config{parsed_extensions: extensions}) do

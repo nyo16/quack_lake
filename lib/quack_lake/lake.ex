@@ -12,6 +12,7 @@ defmodule QuackLake.Lake do
 
     * `:data_path` - Path for data storage. Can be local or cloud (s3://, az://, etc.).
     * `:metadata_path` - Path for metadata storage (defaults to the ducklake path).
+    * `:metadata_schema` - Schema in the catalog database for DuckLake metadata tables.
 
   ## Examples
 
@@ -26,8 +27,9 @@ defmodule QuackLake.Lake do
           :ok | {:error, term()}
   def attach(conn, name, ducklake_path, opts \\ []) do
     data_path = opts[:data_path]
+    metadata_schema = opts[:metadata_schema]
 
-    sql = build_attach_sql(name, ducklake_path, data_path)
+    sql = build_attach_sql(name, ducklake_path, data_path, metadata_schema)
     Query.execute(conn, sql)
   end
 
@@ -67,9 +69,13 @@ defmodule QuackLake.Lake do
   # When the path starts with "ducklake:", DuckDB infers the type automatically.
   # Adding TYPE DUCKLAKE in this case causes the extension to double-parse the
   # connection string and silently drop other options like DATA_PATH.
-  defp build_attach_sql(name, ducklake_path, data_path) do
+  defp build_attach_sql(name, ducklake_path, data_path, metadata_schema) do
     opts =
-      [type_opt(ducklake_path), data_path_opt(data_path)]
+      [
+        type_opt(ducklake_path),
+        data_path_opt(data_path),
+        metadata_schema_opt(metadata_schema)
+      ]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
@@ -84,6 +90,9 @@ defmodule QuackLake.Lake do
 
   defp data_path_opt(nil), do: nil
   defp data_path_opt(path), do: "DATA_PATH '#{escape_string(path)}'"
+
+  defp metadata_schema_opt(nil), do: nil
+  defp metadata_schema_opt(schema), do: "METADATA_SCHEMA '#{escape_string(schema)}'"
 
   defp escape_string(str) do
     String.replace(str, "'", "''")
