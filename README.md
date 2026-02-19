@@ -666,6 +666,45 @@ conn = MyApp.LakeServer.conn()
 
 > **Note:** A single GenServer serializes all queries. For concurrent workloads, consider a pool (e.g., using `poolboy`) or opening connections per-request.
 
+## Container Deployment
+
+DuckDB requires a writable home directory for extension caching and catalog operations. In container environments (Docker, Kubernetes), the `HOME` environment variable is often set to `/nonexistent` or missing entirely, causing `IO Error: Can't find the home directory` at startup.
+
+**QuackLake handles this automatically.** On every connection (raw API and both Ecto adapters), QuackLake:
+
+1. Checks if `HOME` points to a valid directory; if not, resets it
+2. Runs `SET home_directory` on the DuckDB connection after open
+
+The resolution order for the home directory is:
+
+1. Explicit `:home_directory` config option (if set)
+2. `DUCKDB_HOME` environment variable (if set and directory exists)
+3. `HOME` environment variable (if valid)
+4. `/tmp` as final fallback
+
+**No configuration needed in most cases.** If you want to specify a custom directory:
+
+```elixir
+# Raw API
+{:ok, conn} = QuackLake.open(home_directory: "/app/data/duckdb")
+
+# Ecto adapter
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.DuckDB,
+  database: "priv/analytics.duckdb",
+  home_directory: "/app/data/duckdb"
+```
+
+**For Mix releases**, you can also fix `HOME` before the BEAM starts by adding to `rel/env.sh.eex`:
+
+```bash
+# DuckDB requires a writable HOME for extension caching and catalog operations.
+# Container images often set HOME=/nonexistent — override to /tmp.
+if [ ! -d "$HOME" ]; then
+  export HOME=/tmp
+fi
+```
+
 ## Ecto Adapters
 
 QuackLake provides two Ecto adapters for different use cases:

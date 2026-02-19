@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-02-18
+
+### Added
+
+- **Container support**: Automatic DuckDB home directory detection and fix for Docker/Kubernetes environments where `HOME=/nonexistent`
+- **`home_directory` config option**: Configurable fallback directory for DuckDB extension caching and catalog operations
+- `QuackLake.Connection.ensure_home_env/1` — fixes `HOME` env var before connection open
+- `QuackLake.Connection.set_home_directory/2` — runs `SET home_directory` on connection after open
+
+### Documentation
+
+- Added "Container Deployment" section to README
+- Added `docs/duckdb-home-directory-fix.md` reference guide
+
 ## [0.2.7] - 2026-02-14
 
 ### Added
@@ -92,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial public release with full API
 
+[0.2.8]: https://github.com/nyo16/quack_lake/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/nyo16/quack_lake/compare/v0.2.5...v0.2.7
 [0.2.5]: https://github.com/nyo16/quack_lake/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/nyo16/quack_lake/releases/tag/v0.2.0

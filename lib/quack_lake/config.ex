@@ -33,6 +33,8 @@ defmodule QuackLake.Config do
     :data_path,
     # Custom lake name (overrides auto-generated name from path)
     :lake_name,
+    # Override DuckDB home directory (for container environments)
+    :home_directory,
     # Connection pool size (1 for DuckDB, configurable for DuckLake)
     pool_size: 1,
     # Extensions to install/load
@@ -55,6 +57,7 @@ defmodule QuackLake.Config do
           database: String.t() | nil,
           data_path: String.t() | nil,
           lake_name: String.t() | nil,
+          home_directory: String.t() | nil,
           pool_size: pos_integer(),
           extensions: [atom() | {atom(), keyword()}],
           secrets: [{atom(), keyword()}],
@@ -77,6 +80,8 @@ defmodule QuackLake.Config do
     * `:extensions` - List of extensions to install and load.
     * `:secrets` - List of secrets for cloud storage access.
     * `:attach` - List of databases to attach.
+    * `:home_directory` - Override DuckDB home directory. Useful in container environments
+      where `HOME` is unset or points to a non-writable path. Defaults to `nil` (auto-detected).
     * `:auto_install_extensions` - Whether to auto-install required extensions. Defaults to `true`.
     * `:auto_load_extensions` - Whether to auto-load required extensions. Defaults to `true`.
 
@@ -101,6 +106,7 @@ defmodule QuackLake.Config do
       database: opts[:database],
       data_path: opts[:data_path],
       lake_name: opts[:lake_name],
+      home_directory: opts[:home_directory],
       pool_size: Keyword.get(opts, :pool_size, 1),
       extensions: Keyword.get(opts, :extensions, []),
       secrets: Keyword.get(opts, :secrets, []),
@@ -173,4 +179,38 @@ defmodule QuackLake.Config do
   @spec has_attachments?(t()) :: boolean()
   def has_attachments?(%__MODULE__{attach: attach}) when length(attach) > 0, do: true
   def has_attachments?(%__MODULE__{}), do: false
+
+  @doc """
+  Resolves the effective home directory for DuckDB.
+
+  DuckDB requires a writable home directory for extension caching and catalog
+  operations. In container environments (Docker, Kubernetes), `HOME` is often
+  `/nonexistent` or missing, causing `IO Error: Can't find the home directory`.
+
+  Resolution order:
+
+    1. Explicit `:home_directory` from config (if set)
+    2. `DUCKDB_HOME` environment variable (if set and directory exists)
+    3. Current `HOME` environment variable (if set and directory exists)
+    4. `"/tmp"` as final fallback
+
+  """
+  @spec resolve_home_directory(t()) :: String.t()
+  def resolve_home_directory(%__MODULE__{home_directory: dir}) when is_binary(dir), do: dir
+
+  def resolve_home_directory(%__MODULE__{}) do
+    with :error <- check_env_dir("DUCKDB_HOME"),
+         :error <- check_env_dir("HOME") do
+      "/tmp"
+    else
+      {:ok, dir} -> dir
+    end
+  end
+
+  defp check_env_dir(var) do
+    case System.get_env(var) do
+      nil -> :error
+      dir -> if File.dir?(dir), do: {:ok, dir}, else: :error
+    end
+  end
 end

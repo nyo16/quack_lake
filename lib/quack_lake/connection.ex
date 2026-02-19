@@ -28,9 +28,11 @@ defmodule QuackLake.Connection do
   @spec open(keyword()) :: {:ok, Duckdbex.connection()} | {:error, term()}
   def open(opts \\ []) do
     config = Config.new(opts)
+    ensure_home_env(config)
 
     with {:ok, db} <- open_database(config),
          {:ok, conn} <- Duckdbex.connection(db),
+         :ok <- set_home_directory(conn, config),
          :ok <- maybe_setup_extensions(conn, config) do
       {:ok, conn}
     end
@@ -80,7 +82,57 @@ defmodule QuackLake.Connection do
     end
   end
 
+  @doc """
+  Ensures the `HOME` environment variable points to a valid, writable directory.
+
+  DuckDB reads `HOME` at startup for extension caching. In container environments
+  (Docker, Kubernetes), `HOME` may be `/nonexistent` or unset, causing
+  `IO Error: Can't find the home directory`.
+
+  This function checks if `HOME` points to an existing directory. If not, it sets
+  `HOME` to the resolved home directory from `Config.resolve_home_directory/1`.
+
+  Must be called **before** `Duckdbex.open()`.
+  """
+  @spec ensure_home_env(Config.t()) :: :ok
+  def ensure_home_env(%Config{} = config) do
+    case System.get_env("HOME") do
+      nil ->
+        System.put_env("HOME", Config.resolve_home_directory(config))
+
+      home ->
+        unless File.dir?(home) do
+          System.put_env("HOME", Config.resolve_home_directory(config))
+        end
+    end
+
+    :ok
+  end
+
+  @doc """
+  Sets the `home_directory` DuckDB configuration on an open connection.
+
+  DuckDB uses `home_directory` internally for extension caching and catalog
+  operations. This complements `ensure_home_env/1` by also configuring the
+  DuckDB runtime after the connection is opened.
+
+  Must be called **after** opening the connection, **before** extensions/attach.
+  """
+  @spec set_home_directory(Duckdbex.connection(), Config.t()) :: :ok | {:error, term()}
+  def set_home_directory(conn, %Config{} = config) do
+    home = Config.resolve_home_directory(config)
+
+    case Duckdbex.query(conn, "SET home_directory='#{escape_sql_string(home)}'") do
+      {:ok, _ref} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # Private functions
+
+  defp escape_sql_string(str) do
+    String.replace(str, "'", "''")
+  end
 
   defp open_database(%Config{path: nil}) do
     Duckdbex.open()
