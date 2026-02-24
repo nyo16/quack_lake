@@ -41,6 +41,8 @@ defmodule QuackLake do
   ## Options
 
     * `:path` - Path to the DuckDB database file. Defaults to `nil` (in-memory).
+    * `:home_directory` - Override DuckDB home directory. Useful in container
+      environments where `HOME` is unset or non-writable. Defaults to `nil` (auto-detected).
     * `:auto_install_extensions` - Whether to auto-install ducklake. Defaults to `true`.
     * `:auto_load_extensions` - Whether to auto-load ducklake. Defaults to `true`.
 

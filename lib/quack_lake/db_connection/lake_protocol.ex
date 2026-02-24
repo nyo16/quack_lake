@@ -30,7 +30,7 @@ defmodule QuackLake.DBConnection.LakeProtocol do
 
   use DBConnection
 
-  alias QuackLake.Config
+  alias QuackLake.{Config, Connection}
   alias QuackLake.Config.{Extension, Secret, Attach}
   alias QuackLake.DBConnection.{Query, Result}
 
@@ -48,9 +48,11 @@ defmodule QuackLake.DBConnection.LakeProtocol do
   def connect(opts) do
     config = Config.from_ecto_opts(opts)
     config = ensure_ducklake_extension(config)
+    Connection.ensure_home_env(config)
 
     with {:ok, db} <- open_database(config),
          {:ok, conn} <- Duckdbex.connection(db),
+         :ok <- Connection.set_home_directory(conn, config),
          :ok <- run_initialization(conn, config),
          {:ok, lake_name} <- maybe_attach_lake(conn, config) do
       {:ok,
