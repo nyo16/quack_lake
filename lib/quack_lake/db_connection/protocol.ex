@@ -189,7 +189,8 @@ defmodule QuackLake.DBConnection.Protocol do
   end
 
   defp run_initialization(conn, %Config{} = config) do
-    with :ok <- install_extensions(conn, config),
+    with :ok <- Connection.ensure_core_functions(conn, config),
+         :ok <- install_extensions(conn, config),
          :ok <- load_extensions(conn, config),
          :ok <- create_secrets(conn, config),
          :ok <- attach_databases(conn, config) do
@@ -249,20 +250,24 @@ defmodule QuackLake.DBConnection.Protocol do
     end)
   end
 
-  defp execute_query(conn, statement, []) do
-    case Duckdbex.query(conn, statement) do
+  defp execute_query(conn, statement, params) do
+    # Ecto builds statements (DDL in particular) as iodata, while
+    # duckdbex only accepts binaries
+    statement = IO.iodata_to_binary(statement)
+
+    case do_execute_query(conn, statement, params) do
       {:ok, ref} -> {:ok, ref}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp execute_query(conn, statement, params) do
-    encoded_params = Enum.map(params, &encode_param/1)
+  defp do_execute_query(conn, statement, []) do
+    Duckdbex.query(conn, statement)
+  end
 
-    case Duckdbex.query(conn, statement, encoded_params) do
-      {:ok, ref} -> {:ok, ref}
-      {:error, reason} -> {:error, reason}
-    end
+  defp do_execute_query(conn, statement, params) do
+    encoded_params = Enum.map(params, &encode_param/1)
+    Duckdbex.query(conn, statement, encoded_params)
   end
 
   # Parameter encoding for raw queries

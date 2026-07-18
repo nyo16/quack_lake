@@ -88,12 +88,6 @@ defmodule Ecto.Adapters.DuckDB do
     {:ok, []}
   end
 
-  @doc false
-  def default_opts(_repo, config) do
-    # Enforce pool_size: 1 for DuckDB (single writer)
-    Keyword.put(config, :pool_size, 1)
-  end
-
   @impl Ecto.Adapter
   def loaders(:boolean, type), do: [&decode_boolean/1, type]
   def loaders(:binary_id, type), do: [type]

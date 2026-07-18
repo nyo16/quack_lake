@@ -157,6 +157,4 @@ defmodule Ecto.Adapters.DuckDB.Codec do
       false -> :json.decode(value)
     end
   end
-
-  defp json_decode(value), do: value
 end

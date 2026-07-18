@@ -220,7 +220,8 @@ defmodule QuackLake.DBConnection.LakeProtocol do
   end
 
   defp run_initialization(conn, %Config{} = config) do
-    with :ok <- install_extensions(conn, config),
+    with :ok <- Connection.ensure_core_functions(conn, config),
+         :ok <- install_extensions(conn, config),
          :ok <- load_extensions(conn, config),
          :ok <- create_secrets(conn, config),
          :ok <- attach_databases(conn, config) do

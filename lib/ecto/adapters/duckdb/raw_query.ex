@@ -101,7 +101,9 @@ defmodule Ecto.Adapters.DuckDB.RawQuery do
             result
 
           {:error, reason} ->
-            raise Ecto.QueryError, message: "Raw query failed: #{inspect(reason)}"
+            raise QuackLake.Error,
+              message: "Raw query failed: #{inspect(reason)}",
+              reason: reason
         end
       end
 

@@ -87,12 +87,6 @@ defmodule Ecto.Adapters.DuckLake do
     {:ok, []}
   end
 
-  @doc false
-  def default_opts(_repo, config) do
-    # Allow configurable pool_size (default: 5) for concurrent writers
-    Keyword.put_new(config, :pool_size, 5)
-  end
-
   @impl Ecto.Adapter
   def loaders(:boolean, type), do: [&decode_boolean/1, type]
   def loaders(:binary_id, type), do: [type]

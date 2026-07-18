@@ -80,7 +80,7 @@ defmodule Ecto.Adapters.DuckDB.Connection do
   end
 
   @impl true
-  def insert(prefix, table, header, rows, on_conflict, returning, placeholders) do
+  def insert(prefix, table, header, rows, on_conflict, returning, placeholders, _opts \\ []) do
     counter_offset = length(placeholders)
 
     values =
@@ -330,13 +330,20 @@ defmodule Ecto.Adapters.DuckDB.Connection do
       quote_name(name),
       ?\s,
       reference_column_type(ref.type, opts),
-      column_options(name, opts),
+      # PRIMARY KEY is emitted separately by pk_definition/1, otherwise
+      # DuckDB rejects the table for declaring more than one primary key
+      column_options(name, Keyword.delete(opts, :primary_key)),
       reference_constraint(table, name, ref)
     ]
   end
 
   defp column_definition(_table, {:add, name, type, opts}) do
-    [quote_name(name), ?\s, column_type(type, opts), column_options(name, opts)]
+    [
+      quote_name(name),
+      ?\s,
+      column_type(type, opts),
+      column_options(name, Keyword.delete(opts, :primary_key))
+    ]
   end
 
   defp column_change(table, {:add, name, %Ecto.Migration.Reference{} = ref, opts}) do
@@ -1134,6 +1141,11 @@ defmodule Ecto.Adapters.DuckDB.Connection do
 
   @impl true
   def child_spec(opts) do
+    # DuckDB is a single-writer database and each pooled connection opens
+    # its own database instance. A pool larger than 1 would give every
+    # connection an isolated, conflicting view of the same database file,
+    # so the pool size is always forced to 1.
+    opts = Keyword.put(opts, :pool_size, 1)
     DBConnection.child_spec(QuackLake.DBConnection.Protocol, opts)
   end
 

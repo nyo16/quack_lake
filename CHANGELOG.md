@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **duckdbex 0.4.1 / DuckDB 1.5.3**: Bumped `duckdbex` from `~> 0.3.9` to `~> 0.4.1`. The removed `%Duckdbex.Config{}` API was not used by this library, so no public API changes
+
+### Fixed
+
+- **`core_functions` extension handling**: DuckDB 1.5 moved core scalar/aggregate functions (`sum`, window aggregates, …) into the `core_functions` extension, which the duckdbex 0.4 build does not load by default. New `QuackLake.Connection.ensure_core_functions/2` loads it (installing on first use when not cached) during connection initialization in `QuackLake.Connection.open/1` and both DBConnection protocols. Honors `:auto_install_extensions` / `:auto_load_extensions` — users who disable them must install/load `core_functions` themselves, and a first-time install requires network access to fetch the extension
+
 ## [0.2.8] - 2026-02-18
 
 ### Added
