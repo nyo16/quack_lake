@@ -26,6 +26,22 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
     end
   end
 
+  # Schema covering every type shape affected by the tuple-decode fix
+  defmodule TypedRecord do
+    use Ecto.Schema
+
+    @primary_key {:id, :integer, autogenerate: false}
+    schema "typed_records" do
+      field(:on_date, :date)
+      field(:at_time, :time)
+      field(:at_time_usec, :time_usec)
+      field(:happened_at, :naive_datetime)
+      field(:logged_at, :utc_datetime)
+      field(:amount, :decimal)
+      field(:wide_amount, :decimal)
+    end
+  end
+
   setup do
     # Create a unique database file for each test
     db_path =
@@ -99,7 +115,8 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
       result = Ecto.Adapters.SQL.query!(repo, "SELECT * FROM products WHERE id = 1")
 
       assert length(result.rows) == 1
-      assert hd(result.rows) == [1, "Widget", Decimal.new("9.99"), 100]
+      # Raw SQL reads return NIF-native terms: DECIMAL(10,2) is {value, width, scale}
+      assert hd(result.rows) == [1, "Widget", {999, 10, 2}, 100]
     end
 
     test "can update records", %{repo: repo} do
@@ -113,7 +130,7 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
 
       result = Ecto.Adapters.SQL.query!(repo, "SELECT name, price FROM products WHERE id = 1")
 
-      assert hd(result.rows) == ["New Name", Decimal.new("7.50")]
+      assert hd(result.rows) == ["New Name", {750, 10, 2}]
     end
 
     test "can delete records", %{repo: repo} do
@@ -230,6 +247,206 @@ defmodule QuackLake.Integration.Ecto.DuckDBAdapterTest do
       # A category totals 60, B category totals 40
       assert Enum.at(result.rows, 0) == ["A", 10, 60]
       assert Enum.at(result.rows, 3) == ["B", 15, 40]
+    end
+  end
+
+  describe "typed round-trips" do
+    setup %{repo: repo} do
+      Ecto.Adapters.SQL.query!(repo, """
+        CREATE TABLE IF NOT EXISTS typed_records (
+          id INTEGER PRIMARY KEY,
+          on_date DATE,
+          at_time TIME,
+          at_time_usec TIME,
+          happened_at TIMESTAMP,
+          logged_at TIMESTAMP,
+          amount DECIMAL(10, 2),
+          wide_amount DECIMAL(30, 10)
+        )
+      """)
+
+      :ok
+    end
+
+    test "date, times, datetimes and decimals round-trip exactly" do
+      TestRepo.insert!(%TypedRecord{
+        id: 1,
+        on_date: ~D[2026-07-18],
+        at_time: ~T[01:02:03],
+        at_time_usec: ~T[01:02:03.456789],
+        happened_at: ~N[2026-07-18 01:02:03],
+        logged_at: ~U[2026-07-18 01:02:03Z],
+        amount: Decimal.new("12.34"),
+        wide_amount: Decimal.new("1234567890123456789.1234567890")
+      })
+
+      assert [loaded] = TestRepo.all(TypedRecord)
+      assert loaded.on_date == ~D[2026-07-18]
+      assert loaded.at_time == ~T[01:02:03]
+      assert loaded.at_time_usec == ~T[01:02:03.456789]
+      assert loaded.happened_at == ~N[2026-07-18 01:02:03]
+      assert loaded.logged_at == ~U[2026-07-18 01:02:03Z]
+      assert loaded.amount == Decimal.new("12.34")
+      assert loaded.wide_amount == Decimal.new("1234567890123456789.1234567890")
+    end
+
+    test "negative decimals keep sign and exact digits" do
+      TestRepo.insert!(%TypedRecord{
+        id: 2,
+        amount: Decimal.new("-99.05"),
+        wide_amount: Decimal.new("-1234567890123456789.1234567890")
+      })
+
+      assert [loaded] = TestRepo.all(TypedRecord)
+      assert loaded.amount == Decimal.new("-99.05")
+      assert loaded.wide_amount == Decimal.new("-1234567890123456789.1234567890")
+    end
+  end
+
+  describe "raw value semantics (D1)" do
+    test "raw DATE read returns the NIF-native tuple, not a corrupted Decimal", %{repo: repo} do
+      result = Ecto.Adapters.SQL.query!(repo, "SELECT DATE '2026-07-18'")
+
+      assert result.rows == [[{2026, 7, 18}]]
+    end
+
+    test "raw INTERVAL read returns the NIF-native tuple, not a Decimal", %{repo: repo} do
+      result = Ecto.Adapters.SQL.query!(repo, "SELECT INTERVAL 3 MONTH + INTERVAL 5 DAY")
+
+      assert result.rows == [[{3, 5, 0}]]
+    end
+
+    test "raw wide DECIMAL read returns the {low, high} hugeint pair", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT 1234567890123456789.1234567890::DECIMAL(30, 10)"
+        )
+
+      # Pair order is {low, high} — REVERSED from bare HUGEINT results
+      assert result.rows == [[{{5_097_733_593_236_747_986, 669_260_594}, 30, 10}]]
+    end
+
+    test "HUGEINT still decodes to an integer", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT 170141183460469231731687303715884105727::HUGEINT"
+        )
+
+      assert result.rows == [[170_141_183_460_469_231_731_687_303_715_884_105_727]]
+    end
+
+    test "UUID still decodes to a string", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID"
+        )
+
+      assert result.rows == [["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"]]
+    end
+  end
+
+  describe "raw struct params" do
+    setup %{repo: repo} do
+      Ecto.Adapters.SQL.query!(repo, """
+        CREATE TABLE IF NOT EXISTS raw_params (
+          id INTEGER,
+          on_date DATE,
+          at_time TIME,
+          happened_at TIMESTAMP
+        )
+      """)
+
+      Ecto.Adapters.SQL.query!(repo, """
+        INSERT INTO raw_params VALUES
+          (1, DATE '2026-07-18', TIME '01:02:03', TIMESTAMP '2026-07-18 01:02:03')
+      """)
+
+      :ok
+    end
+
+    test "%Date{} param is accepted", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT count(*) FROM raw_params WHERE on_date = $1",
+          [~D[2026-07-18]]
+        )
+
+      assert result.rows == [[1]]
+    end
+
+    test "%Time{} param is accepted", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT count(*) FROM raw_params WHERE at_time = $1",
+          [~T[01:02:03]]
+        )
+
+      assert result.rows == [[1]]
+    end
+
+    test "%NaiveDateTime{} param is accepted", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT count(*) FROM raw_params WHERE happened_at = $1",
+          [~N[2026-07-18 01:02:03]]
+        )
+
+      assert result.rows == [[1]]
+    end
+
+    test "%DateTime{} param is accepted", %{repo: repo} do
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT count(*) FROM raw_params WHERE happened_at = $1",
+          [~U[2026-07-18 01:02:03Z]]
+        )
+
+      assert result.rows == [[1]]
+    end
+
+    test "non-UTC %DateTime{} param is shifted to UTC, not wall-clock", %{repo: repo} do
+      # Same instant as TIMESTAMP '2026-07-18 01:02:03' UTC, expressed at +02:00
+      plus_two = %DateTime{
+        year: 2026,
+        month: 7,
+        day: 18,
+        hour: 3,
+        minute: 2,
+        second: 3,
+        microsecond: {0, 0},
+        time_zone: "Etc/GMT-2",
+        zone_abbr: "+02",
+        utc_offset: 7200,
+        std_offset: 0
+      }
+
+      result =
+        Ecto.Adapters.SQL.query!(
+          repo,
+          "SELECT count(*) FROM raw_params WHERE happened_at = $1",
+          [plus_two]
+        )
+
+      assert result.rows == [[1]]
+    end
+
+    test "%Decimal{} param writes wide decimals losslessly", %{repo: repo} do
+      Ecto.Adapters.SQL.query!(repo, "CREATE TABLE wide (v DECIMAL(30, 10))")
+
+      Ecto.Adapters.SQL.query!(repo, "INSERT INTO wide VALUES ($1)", [
+        Decimal.new("1234567890123456789.1234567890")
+      ])
+
+      result = Ecto.Adapters.SQL.query!(repo, "SELECT CAST(v AS VARCHAR) FROM wide")
+
+      assert result.rows == [["1234567890123456789.1234567890"]]
     end
   end
 end

@@ -6,6 +6,48 @@ defmodule Ecto.Adapters.DuckDB.Codec do
   representations and DuckDB's internal format.
   """
 
+  import Bitwise
+
+  @doc """
+  Decodes a DuckDB DECIMAL result term into a `Decimal` struct.
+
+  Shaped as an Ecto loader step: returns `{:ok, value}`.
+
+  DuckDB returns decimals as `{unscaled_value, width, scale}`. For widths
+  above 18 digits the unscaled value is a `{low, high}` pair that must be
+  combined into a single integer first. NOTE: this order is REVERSED from
+  bare HUGEINT result values, which cross the NIF as `{high, low}` —
+  verified empirically against duckdbex 0.4.1.
+
+  ## Examples
+
+      iex> Ecto.Adapters.DuckDB.Codec.decode_decimal({1234, 10, 2})
+      {:ok, Decimal.new("12.34")}
+
+      iex> Ecto.Adapters.DuckDB.Codec.decode_decimal({{5097733593236747986, 669260594}, 30, 10})
+      {:ok, Decimal.new("1234567890123456789.1234567890")}
+
+  """
+  @spec decode_decimal(term()) :: {:ok, term()}
+  def decode_decimal({{low, high}, width, scale})
+      when is_integer(low) and is_integer(high) and is_integer(width) and is_integer(scale) do
+    decode_decimal({combine_hugeint(high, low), width, scale})
+  end
+
+  def decode_decimal({value, width, scale})
+      when is_integer(value) and is_integer(width) and is_integer(scale) do
+    sign = if value < 0, do: -1, else: 1
+    {:ok, Decimal.new(sign, abs(value), -scale)}
+  end
+
+  def decode_decimal(%Decimal{} = decimal), do: {:ok, decimal}
+  def decode_decimal(nil), do: {:ok, nil}
+  def decode_decimal(other), do: {:ok, other}
+
+  # HUGEINT crosses the NIF as {high, low}: high is the signed upper 64 bits,
+  # low the unsigned lower 64 bits.
+  defp combine_hugeint(high, low), do: (high <<< 64) + low
+
   @doc """
   Encodes an Elixir value for DuckDB.
 
@@ -35,6 +77,51 @@ defmodule Ecto.Adapters.DuckDB.Codec do
   end
 
   def encode(value), do: value
+
+  @doc """
+  Dumper step converting `%Date{}` to the NIF-native `{year, month, day}` tuple.
+  """
+  @spec encode_date(term()) :: {:ok, term()}
+  def encode_date(%Date{} = date), do: {:ok, date_tuple(date)}
+  def encode_date(nil), do: {:ok, nil}
+  def encode_date(other), do: {:ok, other}
+
+  @doc """
+  Dumper step converting `%Time{}` to the NIF-native
+  `{hour, minute, second, microsecond}` tuple.
+  """
+  @spec encode_time(term()) :: {:ok, term()}
+  def encode_time(%Time{} = time), do: {:ok, time_tuple(time)}
+  def encode_time(nil), do: {:ok, nil}
+  def encode_time(other), do: {:ok, other}
+
+  @doc """
+  Converts `%Date{}` to the NIF-native `{year, month, day}` tuple.
+  """
+  @spec date_tuple(Date.t()) :: {integer(), integer(), integer()}
+  def date_tuple(%Date{} = date), do: Date.to_erl(date)
+
+  @doc """
+  Converts `%Time{}` to the NIF-native `{hour, minute, second, microsecond}`
+  tuple. The NIF rejects 3-tuples — the microsecond element is required even
+  when zero.
+  """
+  @spec time_tuple(Time.t()) :: {integer(), integer(), integer(), integer()}
+  def time_tuple(%Time{} = time) do
+    {microsecond, _precision} = time.microsecond
+    {time.hour, time.minute, time.second, microsecond}
+  end
+
+  @doc """
+  Converts `%NaiveDateTime{}` to the NIF-native
+  `{{year, month, day}, {hour, minute, second, microsecond}}` tuple.
+  """
+  @spec naive_datetime_tuple(NaiveDateTime.t()) ::
+          {{integer(), integer(), integer()}, {integer(), integer(), integer(), integer()}}
+  def naive_datetime_tuple(%NaiveDateTime{} = ndt) do
+    {microsecond, _precision} = ndt.microsecond
+    {{ndt.year, ndt.month, ndt.day}, {ndt.hour, ndt.minute, ndt.second, microsecond}}
+  end
 
   @doc """
   Decodes a DuckDB value to Elixir.

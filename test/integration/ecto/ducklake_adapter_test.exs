@@ -183,6 +183,49 @@ defmodule QuackLake.Integration.Ecto.DuckLakeAdapterTest do
     end
   end
 
+  describe "raw value semantics (D1)" do
+    test "raw reads return NIF-native tuples and struct params are accepted", %{
+      test_name: test_name
+    } do
+      lake_name = unique_lake_name("rawvals_#{test_name}")
+      database = DockerHelper.ducklake_database_string(lake_name)
+
+      {:ok, pid} =
+        LakeRepo.start_link(
+          database: database,
+          pool_size: 1
+        )
+
+      Ecto.Adapters.SQL.query!(LakeRepo, """
+        CREATE TABLE #{lake_name}.main.raw_vals (id INTEGER, on_date DATE, amount DECIMAL(10, 2))
+      """)
+
+      Ecto.Adapters.SQL.query!(LakeRepo, """
+        INSERT INTO #{lake_name}.main.raw_vals VALUES (1, DATE '2026-07-18', 12.34)
+      """)
+
+      # DATE stays a {y, m, d} tuple (no corrupted Decimal), DECIMAL stays {v, w, s}
+      result =
+        Ecto.Adapters.SQL.query!(LakeRepo, """
+          SELECT on_date, amount FROM #{lake_name}.main.raw_vals
+        """)
+
+      assert result.rows == [[{2026, 7, 18}, {1234, 10, 2}]]
+
+      # %Date{} param crosses as a NIF-native tuple
+      count =
+        Ecto.Adapters.SQL.query!(
+          LakeRepo,
+          "SELECT count(*) FROM #{lake_name}.main.raw_vals WHERE on_date = $1",
+          [~D[2026-07-18]]
+        )
+
+      assert count.rows == [[1]]
+
+      GenServer.stop(pid)
+    end
+  end
+
   describe "pool configuration" do
     test "respects pool_size configuration", %{test_name: test_name} do
       lake_name = unique_lake_name("pool_#{test_name}")
