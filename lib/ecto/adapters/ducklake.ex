@@ -79,18 +79,14 @@ defmodule Ecto.Adapters.DuckLake do
 
   use Ecto.Adapters.SQL, driver: QuackLake.DBConnection.LakeProtocol
 
+  alias Ecto.Adapters.DuckDB.Codec
+
   @behaviour Ecto.Adapter.Storage
   @behaviour Ecto.Adapter.Structure
 
   @impl Ecto.Adapter
   def ensure_all_started(_config, _type) do
     {:ok, []}
-  end
-
-  @doc false
-  def default_opts(_repo, config) do
-    # Allow configurable pool_size (default: 5) for concurrent writers
-    Keyword.put_new(config, :pool_size, 5)
   end
 
   @impl Ecto.Adapter
@@ -100,10 +96,12 @@ defmodule Ecto.Adapters.DuckLake do
   def loaders(:uuid, type), do: [type]
   def loaders(:date, type), do: [&decode_date/1, type]
   def loaders(:time, type), do: [&decode_time/1, type]
+  def loaders(:time_usec, type), do: [&decode_time/1, type]
   def loaders(:naive_datetime, type), do: [&decode_naive_datetime/1, type]
   def loaders(:naive_datetime_usec, type), do: [&decode_naive_datetime/1, type]
   def loaders(:utc_datetime, type), do: [&decode_utc_datetime/1, type]
   def loaders(:utc_datetime_usec, type), do: [&decode_utc_datetime/1, type]
+  def loaders(:decimal, type), do: [&Codec.decode_decimal/1, type]
   def loaders(:map, type), do: [&decode_json/1, type]
   def loaders({:map, _}, type), do: [&decode_json/1, type]
   def loaders(_primitive, type), do: [type]
@@ -113,8 +111,9 @@ defmodule Ecto.Adapters.DuckLake do
   def dumpers(:binary_id, type), do: [type, &encode_uuid/1]
   def dumpers(Ecto.UUID, type), do: [type, &encode_uuid/1]
   def dumpers(:uuid, type), do: [type, &encode_uuid/1]
-  def dumpers(:date, type), do: [type]
-  def dumpers(:time, type), do: [type]
+  def dumpers(:date, type), do: [type, &Codec.encode_date/1]
+  def dumpers(:time, type), do: [type, &Codec.encode_time/1]
+  def dumpers(:time_usec, type), do: [type, &Codec.encode_time/1]
   def dumpers(:naive_datetime, type), do: [type, &encode_naive_datetime/1]
   def dumpers(:naive_datetime_usec, type), do: [type, &encode_naive_datetime/1]
   def dumpers(:utc_datetime, type), do: [type, &encode_utc_datetime/1]
@@ -293,6 +292,9 @@ defmodule Ecto.Adapters.DuckLake do
   defp decode_date(nil), do: {:ok, nil}
   defp decode_date(other), do: {:ok, other}
 
+  defp decode_time({hour, minute, second, microsecond}),
+    do: {:ok, Time.new!(hour, minute, second, {microsecond, 6})}
+
   defp decode_time({hour, minute, second}), do: {:ok, Time.new!(hour, minute, second)}
   defp decode_time(%Time{} = time), do: {:ok, time}
   defp decode_time(nil), do: {:ok, nil}
@@ -363,7 +365,9 @@ defmodule Ecto.Adapters.DuckLake do
 
   defp encode_utc_datetime(other), do: {:ok, other}
 
-  defp encode_decimal(%Decimal{} = d), do: {:ok, Decimal.to_float(d)}
+  # Decimals cross the NIF as strings: string params are cast to DECIMAL
+  # losslessly, while a float round-trip corrupts wide (>18 digit) decimals
+  defp encode_decimal(%Decimal{} = d), do: {:ok, Decimal.to_string(d)}
   defp encode_decimal(nil), do: {:ok, nil}
   defp encode_decimal(other), do: {:ok, other}
 

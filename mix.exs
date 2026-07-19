@@ -29,7 +29,7 @@ defmodule QuackLake.MixProject do
 
   defp deps do
     [
-      {:duckdbex, "~> 0.3.9"},
+      {:duckdbex, "~> 0.4.1"},
       {:ecto_sql, "~> 3.12"},
       {:db_connection, "~> 2.7"},
       {:jason, "~> 1.4", optional: true},

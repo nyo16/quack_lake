@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **duckdbex 0.4.1 / DuckDB 1.5.3**: Bumped `duckdbex` from `~> 0.3.9` to `~> 0.4.1`. The removed `%Duckdbex.Config{}` API was not used by this library, so no public API changes
+- **BREAKING — raw SQL reads return NIF-native tuples for ambiguous types**: The DBConnection protocols no longer guess types from value shape. DuckDB's NIF returns DATE as `{y, m, d}`, DECIMAL(≤18) as `{value, width, scale}`, and INTERVAL as `{months, days, microseconds}` — identical 3-int-tuple shapes that cannot be told apart without column types, which duckdbex does not expose for results. Raw reads (`Ecto.Adapters.SQL.query!`, `Repo.query`) of DECIMAL(≤18) columns now return `{value, width, scale}` tuples instead of `%Decimal{}`. Schema reads are unaffected: Ecto loaders know the column type and decode correctly. This is the cost of un-corrupting DATE and INTERVAL reads (see Fixed). HUGEINT `{high, low}` and 16-byte UUID binaries are still decoded — those shapes are unambiguous
+- **Decimals cross the NIF as strings, not floats**: Both adapters' `:decimal` dumpers and both protocols' raw-parameter encoding now send `Decimal.to_string/1` instead of `Decimal.to_float/1`. DuckDB casts string parameters to DECIMAL losslessly, while the float round-trip silently corrupted the low digits of wide decimals (verified with DECIMAL(30,10))
+
+### Fixed
+
+- **`core_functions` extension handling**: DuckDB 1.5 moved core scalar/aggregate functions (`sum`, window aggregates, …) into the `core_functions` extension, which the duckdbex 0.4 build does not load by default. New `QuackLake.Connection.ensure_core_functions/2` loads it (installing on first use when not cached) during connection initialization in `QuackLake.Connection.open/1` and both DBConnection protocols. Honors `:auto_install_extensions` / `:auto_load_extensions` — users who disable them must install/load `core_functions` themselves, and a first-time install requires network access to fetch the extension
+- **DATE reads corrupted or unreadable**: The protocols' shape-guessing decode turned DATE `{2026, 7, 18}` into `Decimal.new("2.026E-15")` — schema `:date` fields raised on load, raw SQL DATE reads returned silent garbage. The ambiguous decode clause is removed (see Changed); `:date` schema fields now load correctly. Present since v0.2.7
+- **INTERVAL reads silently corrupted**: `INTERVAL 3 MONTH + 5 DAY` (`{3, 5, 0}`) decoded to `Decimal.new("3")`, destroying the day/microsecond parts. Raw INTERVAL reads now return the NIF-native `{months, days, microseconds}` tuple
+- **`:decimal` schema fields wider than 18 digits failed to load**: Wide decimals cross the NIF as `{{low, high}, width, scale}` hugeint pairs, which nothing decoded. New `Ecto.Adapters.DuckDB.Codec.decode_decimal/1` loader in both adapters handles narrow tuples, wide hugeint pairs, and negative values. Note: the pair is `{low, high}` — reversed from bare HUGEINT result values `{high, low}`
+- **`:time` and `:time_usec` schema fields failed to load**: DuckDB returns TIME as a 4-tuple `{hour, minute, second, microsecond}`, but the loader only matched 3-tuples. Both adapters now decode the 4-tuple (µs precision preserved via `:time_usec`)
+- **`:date`/`:time` schema inserts and raw temporal struct params rejected**: The NIF accepts only tuples, never Elixir structs, and requires TIME as a 4-tuple. New dumper steps convert `%Date{}` → `{y, m, d}` and `%Time{}` → `{h, m, s, µs}`; the protocols' raw-parameter encoding converts `%Date{}`, `%Time{}`, `%NaiveDateTime{}`, and `%DateTime{}` (via `DateTime.to_naive/1`) the same way
+- **Decimal parameter precision loss**: `%Decimal{}` query parameters went through `Decimal.to_float/1`, silently corrupting wide decimals (see Changed)
+
 ## [0.2.8] - 2026-02-18
 
 ### Added
@@ -13,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`home_directory` config option**: Configurable fallback directory for DuckDB extension caching and catalog operations
 - `QuackLake.Connection.ensure_home_env/1` — fixes `HOME` env var before connection open
 - `QuackLake.Connection.set_home_directory/2` — runs `SET home_directory` on connection after open
+
+### Fixed
+
+- **Pool size enforcement**: `Ecto.Adapters.DuckDB` now actually forces `pool_size: 1` (in `Ecto.Adapters.DuckDB.Connection.child_spec/1`). The previous `default_opts/2` was never called by Ecto, so repos booted with Ecto's default pool of 10 — each connection opening its own DuckDB instance of the same file, with writes invisible across connections. `Ecto.Adapters.DuckLake` now applies its documented default of `pool_size: 5` the same way
+- **Iodata statements**: `QuackLake.DBConnection.Protocol` now converts iodata statements to binaries before calling duckdbex. Ecto builds DDL (e.g. the `schema_migrations` table) as iodata, which crashed `mix ecto.migrate` on the `is_binary` guard
+- **Duplicate PRIMARY KEY in DDL**: `Ecto.Adapters.DuckDB.Connection` no longer emits both a column-level and a table-level `PRIMARY KEY` for `create table` (e.g. `schema_migrations`), which DuckDB rejects with "table has more than one primary key"
+- **`insert/8` callback**: Implemented the 8-arity `insert` required by `Ecto.Adapters.SQL.Connection` (ecto_sql 3.14+), fixing `insert_all` raising `UndefinedFunctionError` while keeping the 7-arity schema `insert` path working
+- **`exec!/2` error raising**: Raises `QuackLake.Error` instead of `Ecto.QueryError` without the required `:query` key, which masked the real error behind a `KeyError`
 
 ### Documentation
 

@@ -13,6 +13,17 @@ defmodule QuackLake.DBConnection.Protocol do
   - `transaction_status` - Current transaction state (`:idle`, `:transaction`, `:error`)
   - `config` - The parsed configuration
 
+  ## Raw Value Semantics
+
+  Query results are returned as DuckDB NIF-native terms. Only unambiguous
+  shapes are decoded here: HUGEINT `{high, low}` pairs become integers and
+  16-byte UUID binaries become strings. Ambiguous tuple shapes — DATE
+  `{year, month, day}`, DECIMAL `{value, width, scale}`, INTERVAL
+  `{months, days, microseconds}` — are passed through unchanged because
+  duckdbex exposes no result column types at this layer. Typed decoding
+  happens in the Ecto adapter loaders, which know the column types; raw
+  SQL reads receive the tuples as-is.
+
   ## Usage
 
   This protocol is used internally by `Ecto.Adapters.DuckDB`. Users
@@ -21,6 +32,7 @@ defmodule QuackLake.DBConnection.Protocol do
 
   use DBConnection
 
+  alias Ecto.Adapters.DuckDB.Codec
   alias QuackLake.{Config, Connection}
   alias QuackLake.Config.{Extension, Secret, Attach}
   alias QuackLake.DBConnection.{Query, Result}
@@ -189,7 +201,8 @@ defmodule QuackLake.DBConnection.Protocol do
   end
 
   defp run_initialization(conn, %Config{} = config) do
-    with :ok <- install_extensions(conn, config),
+    with :ok <- Connection.ensure_core_functions(conn, config),
+         :ok <- install_extensions(conn, config),
          :ok <- load_extensions(conn, config),
          :ok <- create_secrets(conn, config),
          :ok <- attach_databases(conn, config) do
@@ -249,28 +262,44 @@ defmodule QuackLake.DBConnection.Protocol do
     end)
   end
 
-  defp execute_query(conn, statement, []) do
-    case Duckdbex.query(conn, statement) do
-      {:ok, ref} -> {:ok, ref}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
   defp execute_query(conn, statement, params) do
-    encoded_params = Enum.map(params, &encode_param/1)
+    # Ecto builds statements (DDL in particular) as iodata, while
+    # duckdbex only accepts binaries
+    statement = IO.iodata_to_binary(statement)
 
-    case Duckdbex.query(conn, statement, encoded_params) do
+    case do_execute_query(conn, statement, params) do
       {:ok, ref} -> {:ok, ref}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  # Parameter encoding for raw queries
-  defp encode_param(%Decimal{} = d), do: Decimal.to_float(d)
-  defp encode_param(%DateTime{} = dt), do: DateTime.to_naive(dt)
-  defp encode_param(%Date{} = d), do: d
-  defp encode_param(%Time{} = t), do: t
-  defp encode_param(%NaiveDateTime{} = ndt), do: ndt
+  defp do_execute_query(conn, statement, []) do
+    Duckdbex.query(conn, statement)
+  end
+
+  defp do_execute_query(conn, statement, params) do
+    encoded_params = Enum.map(params, &encode_param/1)
+    Duckdbex.query(conn, statement, encoded_params)
+  end
+
+  # Parameter encoding for raw queries. The NIF rejects Elixir structs:
+  # temporal values must be NIF-native tuples, decimals numeric strings
+  # (cast to DECIMAL losslessly; floats corrupt wide decimals).
+  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d)
+
+  # Shift to UTC before dropping the zone — to_naive alone would silently
+  # store wall-clock time for non-UTC datetimes. Shifting TO Etc/UTC works
+  # without a time zone database.
+  defp encode_param(%DateTime{} = dt) do
+    dt
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> DateTime.to_naive()
+    |> Codec.naive_datetime_tuple()
+  end
+
+  defp encode_param(%Date{} = d), do: Codec.date_tuple(d)
+  defp encode_param(%Time{} = t), do: Codec.time_tuple(t)
+  defp encode_param(%NaiveDateTime{} = ndt), do: Codec.naive_datetime_tuple(ndt)
 
   defp encode_param(<<_::128>> = uuid) do
     case Ecto.UUID.cast(uuid) do
@@ -295,14 +324,8 @@ defmodule QuackLake.DBConnection.Protocol do
     Enum.map(row, &decode_value/1)
   end
 
-  # Decimal: {value, base, scale} tuple from DuckDB
-  defp decode_value({value, base, scale})
-       when is_integer(value) and is_integer(base) and is_integer(scale) do
-    # DuckDB returns decimals as {unscaled_value, base, scale}
-    # Convert to Decimal struct
-    sign = if value < 0, do: -1, else: 1
-    Decimal.new(sign, abs(value), -scale)
-  end
+  # 3-int tuples are ambiguous (DATE {y,m,d} ≡ DECIMAL {v,w,s} ≡ INTERVAL
+  # {mo,d,us}) and MUST NOT be decoded here — see "Raw Value Semantics" above.
 
   # HUGEINT: {high, low} tuple from DuckDB (128-bit integer as two 64-bit parts)
   # The high part is the upper 64 bits, low is the lower 64 bits

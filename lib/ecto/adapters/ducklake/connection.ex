@@ -19,8 +19,17 @@ defmodule Ecto.Adapters.DuckLake.Connection do
   defdelegate delete_all(query), to: Ecto.Adapters.DuckDB.Connection
 
   @doc false
-  defdelegate insert(prefix, table, header, rows, on_conflict, returning, placeholders),
-    to: Ecto.Adapters.DuckDB.Connection
+  defdelegate insert(
+                prefix,
+                table,
+                header,
+                rows,
+                on_conflict,
+                returning,
+                placeholders,
+                opts \\ []
+              ),
+              to: Ecto.Adapters.DuckDB.Connection
 
   @doc false
   defdelegate update(prefix, table, fields, filters, returning),
@@ -41,6 +50,9 @@ defmodule Ecto.Adapters.DuckLake.Connection do
 
   # Use LakeProtocol for child_spec
   def child_spec(opts) do
+    # DuckLake supports concurrent writers, each connection opening its own
+    # DuckDB instance over the shared lake catalog. Default to a pool of 5.
+    opts = Keyword.put_new(opts, :pool_size, 5)
     DBConnection.child_spec(QuackLake.DBConnection.LakeProtocol, opts)
   end
 

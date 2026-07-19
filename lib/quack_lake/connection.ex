@@ -33,6 +33,7 @@ defmodule QuackLake.Connection do
     with {:ok, db} <- open_database(config),
          {:ok, conn} <- Duckdbex.connection(db),
          :ok <- set_home_directory(conn, config),
+         :ok <- ensure_core_functions(conn, config),
          :ok <- maybe_setup_extensions(conn, config) do
       {:ok, conn}
     end
@@ -126,6 +127,62 @@ defmodule QuackLake.Connection do
       {:ok, _ref} -> :ok
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Ensures DuckDB's `core_functions` extension is available on the connection.
+
+  DuckDB 1.5+ (duckdbex >= 0.4) ships core scalar/aggregate functions such
+  as `sum` in the separate `core_functions` extension, which is not loaded
+  automatically in this build. Honors `:auto_install_extensions` and
+  `:auto_load_extensions`: installing falls back to a network fetch when the
+  extension is not cached in the DuckDB home directory, and users who disable
+  these flags must install/load `core_functions` themselves.
+  """
+  @spec ensure_core_functions(Duckdbex.connection(), Config.t()) :: :ok | {:error, term()}
+  def ensure_core_functions(conn, %Config{
+        auto_install_extensions: true,
+        auto_load_extensions: true
+      }) do
+    case Duckdbex.query(conn, "LOAD core_functions") do
+      {:ok, _ref} ->
+        :ok
+
+      {:error, _reason} ->
+        with {:ok, _ref} <- Duckdbex.query(conn, "INSTALL core_functions"),
+             {:ok, _ref} <- Duckdbex.query(conn, "LOAD core_functions") do
+          :ok
+        else
+          {:error, reason} -> {:error, {:extension_load, "core_functions", reason}}
+        end
+    end
+  end
+
+  def ensure_core_functions(conn, %Config{
+        auto_install_extensions: true,
+        auto_load_extensions: false
+      }) do
+    case Duckdbex.query(conn, "INSTALL core_functions") do
+      {:ok, _ref} -> :ok
+      {:error, reason} -> {:error, {:extension_install, "core_functions", reason}}
+    end
+  end
+
+  def ensure_core_functions(conn, %Config{
+        auto_install_extensions: false,
+        auto_load_extensions: true
+      }) do
+    case Duckdbex.query(conn, "LOAD core_functions") do
+      {:ok, _ref} -> :ok
+      {:error, reason} -> {:error, {:extension_load, "core_functions", reason}}
+    end
+  end
+
+  def ensure_core_functions(_conn, %Config{
+        auto_install_extensions: false,
+        auto_load_extensions: false
+      }) do
+    :ok
   end
 
   # Private functions
