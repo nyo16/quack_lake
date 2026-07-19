@@ -33,6 +33,8 @@ defmodule QuackLake.Config do
     :data_path,
     # Custom lake name (overrides auto-generated name from path)
     :lake_name,
+    # Schema in the catalog database for DuckLake metadata tables
+    :metadata_schema,
     # Override DuckDB home directory (for container environments)
     :home_directory,
     # Connection pool size (1 for DuckDB, configurable for DuckLake)
@@ -57,6 +59,7 @@ defmodule QuackLake.Config do
           database: String.t() | nil,
           data_path: String.t() | nil,
           lake_name: String.t() | nil,
+          metadata_schema: String.t() | nil,
           home_directory: String.t() | nil,
           pool_size: pos_integer(),
           extensions: [atom() | {atom(), keyword()}],
@@ -80,6 +83,7 @@ defmodule QuackLake.Config do
     * `:extensions` - List of extensions to install and load.
     * `:secrets` - List of secrets for cloud storage access.
     * `:attach` - List of databases to attach.
+    * `:metadata_schema` - Schema in the catalog database for DuckLake metadata tables. Useful for storing metadata in a PostgreSQL schema other than `public`.
     * `:home_directory` - Override DuckDB home directory. Useful in container environments
       where `HOME` is unset or points to a non-writable path. Defaults to `nil` (auto-detected).
     * `:auto_install_extensions` - Whether to auto-install required extensions. Defaults to `true`.
@@ -106,6 +110,7 @@ defmodule QuackLake.Config do
       database: opts[:database],
       data_path: opts[:data_path],
       lake_name: opts[:lake_name],
+      metadata_schema: opts[:metadata_schema],
       home_directory: opts[:home_directory],
       pool_size: Keyword.get(opts, :pool_size, 1),
       extensions: Keyword.get(opts, :extensions, []),
